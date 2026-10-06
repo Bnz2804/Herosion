@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Herosion"
+description = "An evidence-first workbench for Benin agricultural extension officers to review plot, rainfall, forecast, crop calendar, and pest evidence, draft advisories, and approve them under a named officer. No advice is sent to farmers."
+version = "1.0.0"
+id = "artifacts/extension-backlog"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21025
+
+[services.development]
+run = "pnpm --filter @workspace/extension-backlog run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/extension-backlog", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/extension-backlog/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21025"
+BASE_PATH = "/"
