@@ -1,0 +1,474 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Evidence-first agricultural extension officer workbench for Benin.
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: workbench
+    description: Officer workbench data
+  - name: agent
+    description: Evidence collection orchestration
+  - name: advisories
+    description: Officer-authored drafts and approval
+  - name: audit
+    description: Append-only action history
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /overview:
+    get:
+      operationId: getOverview
+      tags: [workbench]
+      summary: Get workbench overview
+      responses:
+        "200":
+          description: Summary of the demo evidence and review queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Overview"
+  /clusters:
+    get:
+      operationId: getClusters
+      tags: [workbench]
+      summary: List extension clusters
+      responses:
+        "200":
+          description: Available clusters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Cluster"
+  /clusters/{clusterId}/plots:
+    get:
+      operationId: getClusterPlots
+      tags: [workbench]
+      summary: List plots in a cluster
+      parameters:
+        - in: path
+          name: clusterId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plots in the cluster
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plot"
+        "404":
+          description: Cluster not found
+  /clusters/{clusterId}/evidence:
+    get:
+      operationId: getClusterEvidence
+      tags: [workbench]
+      summary: Get evidence records relevant to a cluster
+      parameters:
+        - in: path
+          name: clusterId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Evidence with provenance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidenceBundle"
+        "404":
+          description: Cluster not found
+  /agent/status:
+    get:
+      operationId: getAgentStatus
+      tags: [agent]
+      summary: Report which agent capabilities are available
+      responses:
+        "200":
+          description: Explicit integration and data-source status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStatus"
+  /agent/runs:
+    post:
+      operationId: createEvidenceRun
+      tags: [agent]
+      summary: Run the tool-using extension agent for one cluster
+      description: >
+        The agent decides which MCP evidence tools to call, reads each result, and returns a draft,
+        evidence-cited conclusion. It never contacts farmers and nothing is actionable until a named
+        officer approves a draft. Returns 503 when no model is configured (no advice is invented).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvidenceRunInput"
+      responses:
+        "201":
+          description: Evidence collection run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidenceRun"
+        "404":
+          description: Cluster not found
+        "502":
+          description: The agent or its tools failed; the failure is recorded in the audit log
+        "503":
+          description: No model is configured, or the agent service is unreachable
+  /agent/runs/{runId}/advisories:
+    post:
+      operationId: submitAgentDrafts
+      tags: [advisories]
+      summary: Submit selected agent recommendations as drafts awaiting human approval
+      description: >
+        Creates one draft per selected household recommendation, with origin agent_draft. A different
+        named officer than the submitter must approve each draft. Nothing is sent to a farmer.
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitAgentDraftsInput"
+      responses:
+        "201":
+          description: Drafts created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Advisory"
+        "400":
+          description: Invalid selection or officer name
+        "404":
+          description: Agent run not found
+        "409":
+          description: A draft for one of these households already exists for this run
+  /advisories:
+    get:
+      operationId: getAdvisories
+      tags: [advisories]
+      summary: List drafts and approved recommendations
+      responses:
+        "200":
+          description: Advisories with attached evidence sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Advisory"
+  /advisories/manual:
+    post:
+      operationId: createManualAdvisory
+      tags: [advisories]
+      summary: Save an officer-authored draft
+      description: Saves a manual draft only; it does not send advice to a farmer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManualAdvisoryInput"
+      responses:
+        "201":
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Advisory"
+        "400":
+          description: Missing or invalid evidence or officer details
+        "404":
+          description: Cluster not found
+  /advisories/{advisoryId}/approve:
+    post:
+      operationId: approveAdvisory
+      tags: [advisories]
+      summary: Approve a draft as a named extension officer
+      description: Approval changes the record state only; there is no farmer delivery channel.
+      parameters:
+        - in: path
+          name: advisoryId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalInput"
+      responses:
+        "200":
+          description: Approved recommendation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Advisory"
+        "400":
+          description: Invalid approval or author and approver are the same person
+        "404":
+          description: Advisory not found
+        "409":
+          description: Advisory is no longer awaiting approval
+  /audit:
+    get:
+      operationId: getAuditEvents
+      tags: [audit]
+      summary: List recent audit events
+      responses:
+        "200":
+          description: Recent system and officer actions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEvent"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    Overview:
+      type: object
+      required: [clusters, plots, pendingAdvisories, approvedAdvisories, dataTier, lastUpdated]
+      properties:
+        clusters: { type: integer }
+        plots: { type: integer }
+        pendingAdvisories: { type: integer }
+        approvedAdvisories: { type: integer }
+        dataTier: { type: string, enum: [local_test_data] }
+        lastUpdated: { type: string, format: date-time }
+    Cluster:
+      type: object
+      required: [clusterId, name, commune, department, householdCount, plotCount, openPestReports, dataTier]
+      properties:
+        clusterId: { type: string }
+        name: { type: string }
+        commune: { type: string }
+        department: { type: string }
+        householdCount: { type: integer }
+        plotCount: { type: integer }
+        openPestReports: { type: integer }
+        dataTier: { type: string, enum: [local_test_data] }
+    Plot:
+      type: object
+      required: [plotId, householdId, householdName, clusterId, areaHa, crop, variety, plantingStatus, dataTier]
+      properties:
+        plotId: { type: string }
+        householdId: { type: string }
+        householdName: { type: string }
+        clusterId: { type: string }
+        areaHa: { type: number }
+        crop: { type: string }
+        variety: { type: string }
+        plantingStatus: { type: string }
+        lastObservationDate: { type: ["string", "null"], format: date }
+        dataTier: { type: string, enum: [local_test_data] }
+    EvidenceItem:
+      type: object
+      required: [evidenceId, kind, label, detail, sourceName, sourceRecordId, sourceStatus, dataTier]
+      properties:
+        evidenceId: { type: string }
+        kind: { type: string, enum: [plot, rainfall, forecast, crop_calendar, pest_report] }
+        label: { type: string }
+        detail: { type: string }
+        observedAt: { type: ["string", "null"], format: date-time }
+        sourceName: { type: string }
+        sourceRecordId: { type: string }
+        sourceStatus: { type: string }
+        dataTier: { type: string, enum: [local_test_data] }
+    EvidenceBundle:
+      type: object
+      required: [clusterId, evidence, sourceSummary, dataTier]
+      properties:
+        clusterId: { type: string }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceItem" }
+        sourceSummary:
+          type: array
+          items: { type: string }
+        dataTier: { type: string, enum: [local_test_data] }
+    ToolCall:
+      type: object
+      required: [toolName, status, resultCount]
+      properties:
+        toolName: { type: string }
+        status: { type: string, enum: [success, error] }
+        resultCount: { type: integer }
+        arguments: { type: [string, "null"], description: "JSON arguments the agent chose" }
+        auditCallId: { type: [string, "null"], description: "Row id in the append-only tool audit log" }
+        summary: { type: [string, "null"] }
+        decision: { type: [string, "null"], description: "The agent's stated reason for calling this tool" }
+    EvidenceRunInput:
+      type: object
+      required: [clusterId, question]
+      properties:
+        clusterId: { type: string, minLength: 1 }
+        question: { type: string, minLength: 3, maxLength: 500 }
+    HouseholdRecommendation:
+      type: object
+      required: [householdId, plotId, recommendation, rationale, evidenceIds, missingData]
+      properties:
+        householdId: { type: string }
+        plotId: { type: string }
+        crop: { type: [string, "null"] }
+        recommendation:
+          type: string
+          enum: [delay_planting, proceed_with_planting, already_planted_monitor, insufficient_evidence, not_applicable]
+        rationale: { type: string }
+        evidenceIds:
+          type: array
+          items: { type: string }
+        auditCallIds:
+          type: array
+          items: { type: string }
+        missingData:
+          type: array
+          items: { type: string }
+    SubmitAgentDraftsInput:
+      type: object
+      required: [officerName, householdIds]
+      properties:
+        officerName: { type: string, minLength: 2, maxLength: 120 }
+        householdIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+    EvidenceRun:
+      type: object
+      required: [runId, clusterId, question, status, workflowMode, modelStatus, toolCalls, evidence, limitations, createdAt]
+      properties:
+        agentSessionId: { type: [string, "null"] }
+        modelName: { type: [string, "null"] }
+        conclusion: { type: [string, "null"] }
+        householdRecommendations:
+          type: array
+          items: { $ref: "#/components/schemas/HouseholdRecommendation" }
+        runId: { type: string }
+        clusterId: { type: string }
+        question: { type: string }
+        status: { type: string, enum: [completed] }
+        workflowMode: { type: string, enum: [evidence_only, agent_driven] }
+        modelStatus: { type: string, enum: [not_configured, configured] }
+        toolCalls:
+          type: array
+          items: { $ref: "#/components/schemas/ToolCall" }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceItem" }
+        limitations:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+    AgentStatus:
+      type: object
+      required: [modelProvider, modelConfigured, advisoryGenerationAvailable, weatherProvider, weatherLive, identityMode, farmerDeliveryEnabled, agentServiceReachable]
+      properties:
+        agentServiceReachable: { type: boolean }
+        modelName: { type: [string, "null"] }
+        modelProvider: { type: string }
+        modelConfigured: { type: boolean }
+        advisoryGenerationAvailable: { type: boolean }
+        weatherProvider: { type: string, enum: [accuweather, synthetic_fixture] }
+        weatherLive: { type: boolean }
+        identityMode: { type: string, enum: [self_attested_prototype] }
+        farmerDeliveryEnabled: { type: boolean, enum: [false] }
+    AdvisoryEvidence:
+      type: object
+      required: [evidenceId, label, sourceName, sourceRecordId, dataTier]
+      properties:
+        evidenceId: { type: string }
+        label: { type: string }
+        sourceName: { type: string }
+        sourceRecordId: { type: string }
+        dataTier: { type: string, enum: [local_test_data] }
+    Advisory:
+      type: object
+      required: [advisoryId, clusterId, title, recommendation, rationale, status, origin, authoredBy, evidence, createdAt]
+      properties:
+        advisoryId: { type: string }
+        clusterId: { type: string }
+        title: { type: string }
+        recommendation: { type: string }
+        rationale: { type: string }
+        status: { type: string, enum: [draft, approved] }
+        origin: { type: string, enum: [manual_officer, agent_draft] }
+        authoredBy: { type: string }
+        submittedBy: { type: ["string", "null"] }
+        agentRunId: { type: ["string", "null"] }
+        approvedBy: { type: ["string", "null"] }
+        approvalNote: { type: ["string", "null"] }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/AdvisoryEvidence" }
+        createdAt: { type: string, format: date-time }
+        approvedAt: { type: ["string", "null"], format: date-time }
+    ManualAdvisoryInput:
+      type: object
+      required: [clusterId, title, recommendation, rationale, authoredBy, evidenceIds]
+      properties:
+        clusterId: { type: string, minLength: 1 }
+        title: { type: string, minLength: 3, maxLength: 160 }
+        recommendation: { type: string, minLength: 3, maxLength: 2000 }
+        rationale: { type: string, minLength: 3, maxLength: 3000 }
+        authoredBy: { type: string, minLength: 2, maxLength: 120 }
+        evidenceIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+    ApprovalInput:
+      type: object
+      required: [officerName]
+      properties:
+        officerName: { type: string, minLength: 2, maxLength: 120 }
+        approvalNote: { type: string, maxLength: 1000 }
+    AuditEvent:
+      type: object
+      required: [eventId, eventType, actor, summary, occurredAt]
+      properties:
+        eventId: { type: string }
+        eventType: { type: string }
+        actor: { type: string }
+        summary: { type: string }
+        occurredAt: { type: string, format: date-time }
+        advisoryId: { type: ["string", "null"] }
+        dataTier: { type: string, enum: [local_test_data] }
