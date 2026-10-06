@@ -22,6 +22,13 @@ cp .env.example .env && scripts/dev.sh              # full stack (needs Postgres
 python scripts/e2e_web.py                           # officer journey against a running stack
 ```
 
+## Plots, owners and weather
+- Every household has a **plot** with a verification level (`cadastral`, `officer_surveyed`, `officer_matched`, `satellite_candidate`, `declared`) and a location confidence the agent must state.
+- Satellite-detected fields are only **candidates**; an officer confirms one (bottom-sheet in the mobile UI). The match is logged and earlier runs are not rewritten.
+- Rain comes from the ~5 km grid cell containing the plot (`get_rainfall_evidence(plot_id=...)`), labelled as an estimate. Households in different cells get different evidence.
+- Owner identity is kept in a separate, consent-gated database the agent tools never open.
+- Deploy: see `DEPLOY_COOLIFY.md`.
+
 ## How the pieces fit
 - The agent decides which MCP tools to call; neither service scripts the order.
 - Agent output is a **draft**. An officer selects household recommendations and submits them; a

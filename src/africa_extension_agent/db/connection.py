@@ -24,3 +24,16 @@ def connect_readonly(path: Path | str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def ensure_schema(path: Path | str | None = None) -> None:
+    """Upgrade an existing database in place (idempotent CREATE ... IF NOT EXISTS)."""
+    p = Path(path or config.DB_PATH)
+    if not p.exists():
+        return
+    conn = sqlite3.connect(p)
+    try:
+        conn.executescript((Path(__file__).with_name("schema_geo.sql")).read_text())
+        conn.commit()
+    finally:
+        conn.close()

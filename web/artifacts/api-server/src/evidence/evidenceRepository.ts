@@ -30,6 +30,11 @@ async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
   return value;
 }
 
+/** Call after any change to plots (e.g. an officer match) so lists/evidence refresh immediately. */
+export function invalidateCache(): void {
+  cache.clear();
+}
+
 export async function listClusters(): Promise<ClusterRow[]> {
   return cached("clusters", async () => GetClustersResponse.parse(await agentService.clusters()));
 }

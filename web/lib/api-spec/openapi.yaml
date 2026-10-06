@@ -14,6 +14,8 @@ tags:
     description: Officer workbench data
   - name: agent
     description: Evidence collection orchestration
+  - name: plots
+    description: Plot location, field candidates and officer matching
   - name: advisories
     description: Officer-authored drafts and approval
   - name: audit
@@ -140,6 +142,41 @@ paths:
           description: The agent or its tools failed; the failure is recorded in the audit log
         "503":
           description: No model is configured, or the agent service is unreachable
+  /plots/{plotId}/candidates:
+    get:
+      operationId: getPlotFieldCandidates
+      tags: [plots]
+      summary: Satellite-detected fields near a plot, ranked, for an officer to confirm
+      parameters:
+        - { in: path, name: plotId, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Ranked candidates (suggestions only)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FieldCandidates" }
+        "404": { description: Plot not found }
+  /plots/{plotId}/match:
+    post:
+      operationId: matchPlotField
+      tags: [plots]
+      summary: An officer confirms that a detected field is this household's plot
+      parameters:
+        - { in: path, name: plotId, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MatchFieldInput" }
+      responses:
+        "200":
+          description: Plot geometry updated, verification level officer_matched
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlotMatchResult" }
+        "400": { description: Invalid officer name }
+        "404": { description: Plot or candidate not found }
+        "409": { description: Plot protected (surveyed/cadastral) or field already matched }
   /agent/runs/{runId}/advisories:
     post:
       operationId: submitAgentDrafts
@@ -302,6 +339,62 @@ components:
         plantingStatus: { type: string }
         lastObservationDate: { type: ["string", "null"], format: date }
         dataTier: { type: string, enum: [local_test_data] }
+        verificationLevel: { type: ["string", "null"], description: "cadastral | officer_surveyed | officer_matched | satellite_candidate | declared" }
+        geometrySource: { type: ["string", "null"] }
+        locationConfidence: { type: ["string", "null"], enum: [high, medium, low, very_low, null] }
+        locationPrecision: { type: ["string", "null"], enum: [polygon, village_centroid, null] }
+        centroidLat: { type: ["number", "null"] }
+        centroidLon: { type: ["number", "null"] }
+        areaMappedHa: { type: ["number", "null"] }
+        areaCheck: { type: ["string", "null"] }
+        weatherCellId: { type: ["string", "null"] }
+        tenureType: { type: ["string", "null"] }
+        geometry: { type: ["object", "null"], additionalProperties: true, description: "GeoJSON Polygon" }
+    FieldCandidate:
+      type: object
+      required: [candidateId, source, areaHa, distanceM, score, reasons, alreadyMatched, geometry]
+      properties:
+        candidateId: { type: string }
+        source: { type: string }
+        areaHa: { type: number }
+        distanceM: { type: integer }
+        score: { type: number }
+        reasons: { type: array, items: { type: string } }
+        alreadyMatched: { type: boolean }
+        geometry: { type: object, additionalProperties: true }
+    FieldCandidates:
+      type: object
+      required: [plotId, verificationLevel, origin, candidates, radiusKm, note]
+      properties:
+        plotId: { type: string }
+        verificationLevel: { type: string }
+        declaredAreaHa: { type: ["number", "null"] }
+        origin:
+          type: object
+          required: [lat, lon, hasPolygon]
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            hasPolygon: { type: boolean }
+        candidates: { type: array, items: { $ref: "#/components/schemas/FieldCandidate" } }
+        radiusKm: { type: number }
+        note: { type: string }
+    MatchFieldInput:
+      type: object
+      required: [candidateId, officerName]
+      properties:
+        candidateId: { type: string }
+        officerName: { type: string, minLength: 2, maxLength: 120 }
+    PlotMatchResult:
+      type: object
+      required: [plotId, candidateId, verificationLevel, previousVerification, weatherCellId, matchedBy]
+      properties:
+        plotId: { type: string }
+        candidateId: { type: string }
+        verificationLevel: { type: string }
+        previousVerification: { type: string }
+        weatherCellId: { type: string }
+        matchedBy: { type: string }
     EvidenceItem:
       type: object
       required: [evidenceId, kind, label, detail, sourceName, sourceRecordId, sourceStatus, dataTier]
@@ -472,3 +565,4 @@ components:
         occurredAt: { type: string, format: date-time }
         advisoryId: { type: ["string", "null"] }
         dataTier: { type: string, enum: [local_test_data] }
+

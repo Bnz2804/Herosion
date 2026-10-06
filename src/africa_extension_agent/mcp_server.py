@@ -37,8 +37,9 @@ def get_household_cluster(
     planting_status: Annotated[str | None, Field(description="'planted' or 'not_planted'")] = None,
 ) -> dict[str, Any]:
     """List the households in a cluster (synthetic farmer IDs only) with crop, variety, soil, drainage,
-    irrigation, planting status and planned/actual planting dates. Fields that are unknown are listed
-    in `missing_fields`. Contains NO weather, calendar or pest information."""
+    irrigation, planting status and planned/actual planting dates, plus a `plot` block (plot_id, verification level,
+    location confidence/precision, mapped-vs-declared area check, weather_cell_id). Unknown fields are listed in
+    `missing_fields`. No owner names. Contains NO weather, calendar or pest information."""
     return audited("get_household_cluster")(
         lambda **kw: _run(tools.get_household_cluster, **kw))(cluster_id=cluster_id, crop=crop,
                                                               planting_status=planting_status)
@@ -46,17 +47,22 @@ def get_household_cluster(
 
 @mcp.tool(annotations=READ_ONLY)
 def get_rainfall_evidence(
-    cluster_id: Annotated[str, Field(description="Cluster code, e.g. 'GLZ-001'")],
+    plot_id: Annotated[str | None, Field(description="Plot id from get_household_cluster (e.g. 'PL-GLZ001-001'). Preferred: "
+                                         "returns rain for the ~5 km grid cell containing that plot.")] = None,
+    cluster_id: Annotated[str | None, Field(description="Cluster code. Only used when no plot_id is given "
+                                            "(cluster-level series, not plot-specific).")] = None,
     as_of: Annotated[str | None, Field(description="ISO date; defaults to the dataset reference date")] = None,
     lookback_days: Annotated[int, Field(description="Days of observed rain to analyse (7-60)")] = 21,
     forecast_days: Annotated[int, Field(description="Days of forecast to include (1-14)")] = 14,
 ) -> dict[str, Any]:
-    """Observed rainfall totals, current dry-spell length, strongest 3-day event, data gaps, and the
-    short-range forecast for a cluster, plus an `evidence_sufficiency` rating. Does NOT interpret what
-    the weather means for any crop."""
+    """Observed rainfall totals, current dry-spell length, strongest 3-day event, data gaps and the short-range
+    forecast, with an `evidence_sufficiency` rating. With plot_id the result is for the plot's grid cell and
+    reports `location` (cell id, location confidence, plot verification level): plots in the same
+    `weather_cell_id` share one result, so call once per distinct cell. Does NOT interpret what the weather
+    means for any crop."""
     return audited("get_rainfall_evidence")(
         lambda **kw: _run(tools.get_rainfall_evidence, **kw))(
-        cluster_id=cluster_id, as_of=as_of, lookback_days=lookback_days, forecast_days=forecast_days)
+        cluster_id=cluster_id, plot_id=plot_id, as_of=as_of, lookback_days=lookback_days, forecast_days=forecast_days)
 
 
 @mcp.tool(annotations=READ_ONLY)

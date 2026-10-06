@@ -18,7 +18,10 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 from pydantic_ai.models import Model
 
-from . import audit, config
+import json
+import sqlite3 as _sqlite3
+
+from . import audit, config, plot_matching
 from . import evidence_catalog as ec
 from .agent import run_agent
 from .db.connection import connect_readonly
@@ -35,6 +38,11 @@ class RunInput(BaseModel):
     question: str = Field(min_length=3, max_length=500)
 
 
+class MatchInput(BaseModel):
+    candidateId: str = Field(min_length=1)
+    officerName: str = Field(min_length=2, max_length=120)
+
+
 def model_info(model: str | Model) -> dict[str, Any]:
     if not isinstance(model, str):
         return {"provider": "injected", "name": type(model).__name__, "configured": True}
@@ -46,6 +54,11 @@ def model_info(model: str | Model) -> dict[str, Any]:
 
 def create_app(model_override: str | Model | None = None) -> FastAPI:
     app = FastAPI(title="africa-extension-agent service", version="0.1.0")
+    try:  # upgrade older databases in place (idempotent)
+        from .db.connection import ensure_schema
+        ensure_schema()
+    except Exception:
+        pass
 
     def current_model() -> str | Model:
         return model_override or config.DEFAULT_MODEL
@@ -102,6 +115,28 @@ def create_app(model_override: str | Model | None = None) -> FastAPI:
         finally:
             c.close()
 
+    @app.get("/plots/{plot_id}/candidates", dependencies=[Depends(guard)])
+    def candidates(plot_id: str, radius_km: float = 2.0, limit: int = 8):
+        c = conn()
+        try:
+            res = plot_matching.candidates_for(c, plot_id, max(0.2, min(radius_km, 10)), max(1, min(limit, 20)))
+            if res is None:
+                raise HTTPException(404, "Plot not found")
+            return res
+        finally:
+            c.close()
+
+    @app.post("/plots/{plot_id}/match", dependencies=[Depends(guard)])
+    def match(plot_id: str, body: MatchInput):
+        w = _sqlite3.connect(config.DB_PATH, timeout=10)
+        w.row_factory = _sqlite3.Row
+        try:
+            return plot_matching.confirm_match(w, plot_id, body.candidateId, body.officerName)
+        except plot_matching.MatchError as e:
+            raise HTTPException(e.status, str(e))
+        finally:
+            w.close()
+
     @app.post("/runs", status_code=201, dependencies=[Depends(guard)])
     async def runs(body: RunInput):
         m = model_info(current_model())
@@ -139,20 +174,29 @@ def create_app(model_override: str | Model | None = None) -> FastAPI:
             "resultCount": r["result_count"] or 0, "arguments": r["arguments_json"], "auditCallId": r["call_id"],
             "summary": r["result_summary"], "decision": decisions[i] if len(decisions) == len(log) else None,
         } for i, r in enumerate(log)]
-        called = [r["tool_name"] for r in log]
-        evidence_items = ec.filter_for_tools(catalog, called)
+        c = conn()
+        try:
+            cells = ec.plot_cells(c, body.clusterId)
+        finally:
+            c.close()
+        per_call = {r["call_id"]: ec.evidence_for_call(catalog, r["tool_name"], json.loads(r["arguments_json"]),
+                                                       body.clusterId, cells) for r in log}
+        used = {e for ids in per_call.values() for e in ids}
+        evidence_items = [i for i in catalog if i["evidenceId"] in used]
         by_id = {e["evidenceId"]: e for e in evidence_items}
 
         recs = []
         for r in advice.household_recommendations:
             h = state.households.get(r.household_id, {})
-            kinds_tools = {tool_by_call[e] for e in r.evidence_ids if e in tool_by_call}
-            ids = [f"plot:{ec.plot_id(r.household_id)}"] if "get_household_cluster" in called else []
-            # crop-specific evidence (calendar rule, pest reports) is cited only for that household's crop
-            relevant = [i for i in evidence_items if i["kind"] != "plot" and i.get("crop") in (None, h.get("crop"))]
-            ids += [e["evidenceId"] for e in ec.filter_for_tools(relevant, kinds_tools)]
-            recs.append({"householdId": r.household_id, "plotId": ec.plot_id(r.household_id),
-                         "crop": h.get("crop"), "recommendation": r.recommendation, "rationale": r.rationale,
+            pid = ec.plot_id(r.household_id)
+            ids: list[str] = []
+            for cid in r.evidence_ids:
+                for e in per_call.get(cid, []):
+                    if not e.startswith("plot:") or e == f"plot:{pid}":
+                        ids.append(e)
+            # a household's own weather: only its cell (plot-level call) or the cluster series (cluster-level call)
+            recs.append({"householdId": r.household_id, "plotId": pid, "crop": h.get("crop"),
+                         "recommendation": r.recommendation, "rationale": r.rationale,
                          "evidenceIds": [i for i in dict.fromkeys(ids) if i in by_id],
                          "auditCallIds": [e for e in r.evidence_ids if e in tool_by_call],
                          "missingData": r.missing_data})

@@ -44,6 +44,15 @@ Evidence rules (strict):
   asked about are `not_applicable`.
 - Compare observed rainfall and forecast against the crop's onset rule and maximum safe dry spell
   from the crop-calendar tool; do not rely on general knowledge of thresholds.
+- Weather varies between ~5 km grid cells. Each household has a `plot` block with a `weather_cell_id`.
+  For a question about specific households, call get_rainfall_evidence with plot_id (any plot in the cell)
+  once per distinct weather_cell_id among the households you judge, and judge every household with ITS OWN
+  cell's result. Use the cluster-level call (cluster_id only) only when no plot is available.
+- State how well each plot's location is known (`verification_level`, `location_confidence`). For
+  `village_centroid` precision or an unconfirmed `satellite_candidate`, say the weather is for an
+  approximate location and lower your certainty; mention an `area_check` mismatch. Never present
+  location as certain when it is not.
+- You only ever see household/plot IDs. Never guess or mention an owner's name.
 - Give no pesticide product or dosage advice.
 Finish with the structured answer only after you have the evidence you need (or have established it is unavailable).
 """
@@ -72,6 +81,7 @@ class RunState:
     call_ids: set[str] = field(default_factory=set)
     households: dict[str, dict] = field(default_factory=dict)
     tool_calls: list[str] = field(default_factory=list)
+    call_cells: dict[str, str] = field(default_factory=dict)  # audit_call_id -> weather cell of plot-level rainfall calls
 
 
 Emit = Callable[[str, str], None]  # (kind, text)
@@ -99,6 +109,11 @@ def build_agent(model: str | Model, session_id: str, db_path: str) -> Agent[RunS
             bad = [e for e in r.evidence_ids if e not in st.call_ids]
             if bad:
                 problems.append(f"{r.household_id} cites unknown evidence ids {bad}")
+            own = ((h.get("plot") or {}).get("weather_cell_id"))
+            wrong = [e for e in r.evidence_ids if e in st.call_cells and own and st.call_cells[e] != own]
+            if wrong:
+                problems.append(f"{r.household_id} is in weather cell {own} but cites rainfall for another cell ({wrong}); "
+                                f"call get_rainfall_evidence with this household's plot_id")
         bad = [e for e in out.evidence_ids if e not in st.call_ids]
         if bad:
             problems.append(f"unknown top-level evidence ids {bad}")
@@ -142,6 +157,8 @@ async def run_agent(question: str, model: str | Model | None = None, db_path: st
                         if isinstance(res, dict):
                             if cid := res.get("audit_call_id"):
                                 state.call_ids.add(cid)
+                                if (res.get("location") or {}).get("basis") == "plot_grid_cell":
+                                    state.call_cells[cid] = res["location"]["cell_id"]
                             for h in res.get("households", []) or []:
                                 state.households[h["household_id"]] = h
                             emit("tool_result", f"[{res.get('audit_call_id', '?')}] {res.get('summary', '(no summary)')}")

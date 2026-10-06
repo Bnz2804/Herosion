@@ -63,7 +63,18 @@ export const GetClusterPlotsResponseItem = zod.object({
   "variety": zod.string(),
   "plantingStatus": zod.string(),
   "lastObservationDate": zod.coerce.date().nullish(),
-  "dataTier": zod.enum(['local_test_data'])
+  "dataTier": zod.enum(['local_test_data']),
+  "verificationLevel": zod.string().nullish().describe('cadastral | officer_surveyed | officer_matched | satellite_candidate | declared'),
+  "geometrySource": zod.string().nullish(),
+  "locationConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal('very_low'),zod.literal(null)]).nullish(),
+  "locationPrecision": zod.union([zod.literal('polygon'),zod.literal('village_centroid'),zod.literal(null)]).nullish(),
+  "centroidLat": zod.number().nullish(),
+  "centroidLon": zod.number().nullish(),
+  "areaMappedHa": zod.number().nullish(),
+  "areaCheck": zod.string().nullish(),
+  "weatherCellId": zod.string().nullish(),
+  "tenureType": zod.string().nullish(),
+  "geometry": zod.record(zod.string(), zod.unknown()).nullish().describe('GeoJSON Polygon')
 })
 export const GetClusterPlotsResponse = zod.array(GetClusterPlotsResponseItem)
 
@@ -166,6 +177,64 @@ export const CreateEvidenceRunResponse = zod.object({
 })),
   "limitations": zod.array(zod.string()),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Satellite-detected fields near a plot, ranked, for an officer to confirm
+ */
+export const GetPlotFieldCandidatesParams = zod.object({
+  "plotId": zod.coerce.string()
+})
+
+export const GetPlotFieldCandidatesResponse = zod.object({
+  "plotId": zod.string(),
+  "verificationLevel": zod.string(),
+  "declaredAreaHa": zod.number().nullish(),
+  "origin": zod.object({
+  "lat": zod.number(),
+  "lon": zod.number(),
+  "hasPolygon": zod.boolean()
+}),
+  "candidates": zod.array(zod.object({
+  "candidateId": zod.string(),
+  "source": zod.string(),
+  "areaHa": zod.number(),
+  "distanceM": zod.number().int(),
+  "score": zod.number(),
+  "reasons": zod.array(zod.string()),
+  "alreadyMatched": zod.boolean(),
+  "geometry": zod.record(zod.string(), zod.unknown())
+})),
+  "radiusKm": zod.number(),
+  "note": zod.string()
+})
+
+
+/**
+ * @summary An officer confirms that a detected field is this household's plot
+ */
+export const MatchPlotFieldParams = zod.object({
+  "plotId": zod.coerce.string()
+})
+
+export const matchPlotFieldBodyOfficerNameMin = 2;
+export const matchPlotFieldBodyOfficerNameMax = 120;
+
+
+
+export const MatchPlotFieldBody = zod.object({
+  "candidateId": zod.string(),
+  "officerName": zod.string().min(matchPlotFieldBodyOfficerNameMin).max(matchPlotFieldBodyOfficerNameMax)
+})
+
+export const MatchPlotFieldResponse = zod.object({
+  "plotId": zod.string(),
+  "candidateId": zod.string(),
+  "verificationLevel": zod.string(),
+  "previousVerification": zod.string(),
+  "weatherCellId": zod.string(),
+  "matchedBy": zod.string()
 })
 
 
@@ -355,3 +424,5 @@ export const GetAuditEventsResponseItem = zod.object({
   "dataTier": zod.enum(['local_test_data']).optional()
 })
 export const GetAuditEventsResponse = zod.array(GetAuditEventsResponseItem)
+
+

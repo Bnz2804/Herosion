@@ -28,10 +28,13 @@ import type {
   EvidenceBundle,
   EvidenceRun,
   EvidenceRunInput,
+  FieldCandidates,
   HealthStatus,
   ManualAdvisoryInput,
+  MatchFieldInput,
   Overview,
   Plot,
+  PlotMatchResult,
   SubmitAgentDraftsInput
 } from './api.schemas';
 
@@ -614,6 +617,172 @@ export const useCreateEvidenceRun = <TError = ErrorType<void>,
       return useMutation(getCreateEvidenceRunMutationOptions(options));
     }
 
+export const getGetPlotFieldCandidatesUrl = (plotId: string,) => {
+
+
+
+
+  return `/api/plots/${plotId}/candidates`
+}
+
+/**
+ * @summary Satellite-detected fields near a plot, ranked, for an officer to confirm
+ */
+export const getPlotFieldCandidates = async (plotId: string, options?: Parameters<typeof customFetch>[1]): Promise<FieldCandidates> => {
+
+  return customFetch<FieldCandidates>(getGetPlotFieldCandidatesUrl(plotId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlotFieldCandidatesQueryKey = (plotId: string,) => {
+    return [
+    `/api/plots/${plotId}/candidates`
+    ] as const;
+    }
+
+
+export const getGetPlotFieldCandidatesQueryOptions = <TData = Awaited<ReturnType<typeof getPlotFieldCandidates>>, TError = ErrorType<void>>(plotId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlotFieldCandidates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlotFieldCandidatesQueryKey(plotId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlotFieldCandidates>>> = ({ signal }) => getPlotFieldCandidates(plotId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: plotId !== null && plotId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlotFieldCandidates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlotFieldCandidatesQueryResult = NonNullable<Awaited<ReturnType<typeof getPlotFieldCandidates>>>
+export type GetPlotFieldCandidatesQueryError = ErrorType<void>
+
+
+/**
+ * @summary Satellite-detected fields near a plot, ranked, for an officer to confirm
+ */
+
+export function useGetPlotFieldCandidates<TData = Awaited<ReturnType<typeof getPlotFieldCandidates>>, TError = ErrorType<void>>(
+ plotId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlotFieldCandidates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlotFieldCandidatesQueryOptions(plotId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getMatchPlotFieldUrl = (plotId: string,) => {
+
+
+
+
+  return `/api/plots/${plotId}/match`
+}
+
+/**
+ * @summary An officer confirms that a detected field is this household's plot
+ */
+export const matchPlotField = async (plotId: string,
+    matchFieldInput: MatchFieldInput, options?: Parameters<typeof customFetch>[1]): Promise<PlotMatchResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<PlotMatchResult>(getMatchPlotFieldUrl(plotId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(matchFieldInput)
+  }
+);}
+
+
+
+
+
+export const getMatchPlotFieldMutationKey = () => ['matchPlotField'] as const;
+
+export const getMatchPlotFieldMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof matchPlotField>>, TError,MatchPlotFieldMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof matchPlotField>>, TError,MatchPlotFieldMutationVariables, TContext> => {
+
+const mutationKey = getMatchPlotFieldMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof matchPlotField>>, MatchPlotFieldMutationVariables> = (props) => {
+          const {plotId,data} = props ?? {};
+
+          return  matchPlotField(plotId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MatchPlotFieldMutationResult = NonNullable<Awaited<ReturnType<typeof matchPlotField>>>
+    export type MatchPlotFieldMutationBody = BodyType<MatchFieldInput>
+    export type MatchPlotFieldMutationError = ErrorType<void>
+    export type MatchPlotFieldMutationVariables = {plotId: string;data: BodyType<MatchFieldInput>}
+
+    /**
+ * @summary An officer confirms that a detected field is this household's plot
+ */
+export const useMatchPlotField = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof matchPlotField>>, TError,MatchPlotFieldMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof matchPlotField>>,
+        TError,
+        MatchPlotFieldMutationVariables,
+        TContext
+      > => {
+      return useMutation(getMatchPlotFieldMutationOptions(options));
+    }
+
 export const getSubmitAgentDraftsUrl = (runId: string,) => {
 
 
@@ -1030,3 +1199,10 @@ export function useGetAuditEvents<TData = Awaited<ReturnType<typeof getAuditEven
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+

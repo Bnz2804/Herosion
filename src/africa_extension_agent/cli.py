@@ -52,10 +52,14 @@ def render_final(advice: ExtensionAdvice) -> None:
 
 
 @app.command()
-def seed(db: str = typer.Option(None, help="SQLite path (default: ./data/extension.sqlite)")) -> None:
+def seed(db: str = typer.Option(None, help="SQLite path (default: ./data/extension.sqlite)"),
+         force: bool = typer.Option(False, help="Overwrite an existing database (DESTROYS its data)")) -> None:
     """Create the SQLite database and load the synthetic Benin dataset."""
     if db:
         config.DB_PATH = type(config.DB_PATH)(db)
+    if config.DB_PATH.exists() and not force:
+        console.print(f"[red]{config.DB_PATH} already exists. Refusing to overwrite; use --force to destroy it.[/red]")
+        raise typer.Exit(1)
     path = seed_db(config.DB_PATH)
     console.print(f"[green]Seeded synthetic data into {path}[/green]")
 
@@ -78,6 +82,55 @@ def demo(model: str = typer.Option(None, help="Pydantic AI model string, e.g. mi
 def ask(question: str, model: str = typer.Option(None)) -> None:
     """Ask the agent any question (it decides which tools to use)."""
     _run(question, model)
+
+
+@app.command("import-fields")
+def import_fields_cmd(file: str, source: str = typer.Option(..., help="Label, e.g. ftw-2025 or andf-pfr"),
+                      id_property: str = typer.Option(None), bbox: str = typer.Option(None, help="lon_min,lat_min,lon_max,lat_max (GeoParquet filter)")) -> None:
+    """Import field polygons (GeoJSON/GeoJSONL/GeoParquet) as CANDIDATES for officer matching."""
+    from .db.connection import connect, ensure_schema
+    from .importers import import_fields
+    ensure_schema()
+    conn = connect()
+    console.print(import_fields(conn, file, source, id_property, tuple(map(float, bbox.split(","))) if bbox else None))
+
+
+@app.command("import-plots")
+def import_plots_cmd(file: str, geometry_source: str = typer.Option(..., help="cadastre_andf | officer_gps | cooperative_file | satellite_field"),
+                     mapping: str = typer.Option(None, help="JSON file mapping canonical fields to your CSV columns"),
+                     cluster: str = typer.Option(None, help="Default cluster id if the file has no cluster column"),
+                     crop: str = "maize") -> None:
+    """Import a farmer+plot list (CSV). Owner details go to a separate, consent-gated database."""
+    import json as _json
+    from .db.connection import connect, ensure_schema
+    from .importers import import_plots_csv
+    ensure_schema()
+    conn = connect()
+    mp = _json.load(open(mapping)) if mapping else None
+    console.print(import_plots_csv(conn, file, geometry_source, mp, cluster, crop))
+
+
+@app.command("sync-weather")
+def sync_weather_cmd(live: bool = typer.Option(False, help="Also switch the dataset clock to 'today' (live mode)")) -> None:
+    """Fetch rain for every plot's grid cell from Open-Meteo. Failures leave existing data untouched."""
+    from .db.connection import connect, ensure_schema
+    from .weather_sync import OpenMeteo, sync
+    ensure_schema()
+    conn = connect()
+    if live:
+        conn.execute("INSERT OR REPLACE INTO meta VALUES ('as_of_mode','live')"); conn.commit()
+    for r in sync(conn, OpenMeteo()):
+        console.print(r)
+
+
+@app.command("set-mode")
+def set_mode(mode: str = typer.Argument(..., help="live | synthetic")) -> None:
+    """live: 'as of' = today. synthetic: fixed demo date (2026-04-10)."""
+    from .db.connection import connect, ensure_schema
+    ensure_schema()
+    conn = connect()
+    conn.execute("INSERT OR REPLACE INTO meta VALUES ('as_of_mode', ?)", ("live" if mode == "live" else "synthetic",)); conn.commit()
+    console.print(f"mode = {mode}")
 
 
 @app.command()

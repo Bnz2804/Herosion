@@ -12,7 +12,7 @@ export class AgentServiceError extends Error {
   constructor(
     message: string,
     readonly httpStatus: number,
-    readonly code: "unreachable" | "model_not_configured" | "agent_failed" | "not_found" | "bad_response",
+    readonly code: "unreachable" | "model_not_configured" | "agent_failed" | "not_found" | "bad_response" | "rejected",
   ) {
     super(message);
     this.name = "AgentServiceError";
@@ -53,6 +53,8 @@ async function call<T>(path: string, init?: { method?: string; body?: Json; time
     const d = typeof detail === "object" && detail !== null ? (detail as { error?: string; message?: string }) : {};
     const message = d.message ?? (typeof detail === "string" ? detail : `Agent service error ${res.status}`);
     if (res.status === 404) throw new AgentServiceError(message, 404, "not_found");
+    if (res.status === 400 || res.status === 409) throw new AgentServiceError(message, res.status, "rejected");
+    if (res.status === 422) throw new AgentServiceError("Invalid input (check the officer's full name)", 400, "rejected");
     if (d.error === "model_not_configured") throw new AgentServiceError(message, 503, "model_not_configured");
     throw new AgentServiceError(message, res.status === 503 ? 503 : 502, d.error === "agent_failed" ? "agent_failed" : "unreachable");
   }
@@ -64,6 +66,9 @@ export const agentService = {
   clusters: () => call<unknown[]>("/clusters"),
   plots: (clusterId: string) => call<unknown[]>(`/clusters/${encodeURIComponent(clusterId)}/plots`),
   evidence: (clusterId: string) => call<Json>(`/clusters/${encodeURIComponent(clusterId)}/evidence`),
+  candidates: (plotId: string) => call<Json>(`/plots/${encodeURIComponent(plotId)}/candidates`),
+  match: (plotId: string, candidateId: string, officerName: string) =>
+    call<Json>(`/plots/${encodeURIComponent(plotId)}/match`, { method: "POST", body: { candidateId, officerName } }),
   /** Agent runs call a language model and several tools; allow two minutes. */
   run: (clusterId: string, question: string) =>
     call<unknown>("/runs", { method: "POST", body: { clusterId, question }, timeoutMs: 120_000 }),

@@ -84,3 +84,37 @@ def make_stub(bad_household_first: bool = False) -> FunctionModel:
         return _final(info, res)
 
     return FunctionModel(fn)
+
+
+def make_plot_stub(wrong_cell_first: bool = False) -> FunctionModel:
+    """TEST DOUBLE: judges ONE household with plot-level rainfall. If wrong_cell_first, it first cites the
+    rainfall call of a plot in a different cell, and only corrects after the validator pushes back."""
+    target, other = "HH-GLZ001-001", "PL-GLZ001-009"
+
+    def fn(messages, info: AgentInfo) -> ModelResponse:
+        calls = [(p.tool_name, p.content) for m in messages for p in m.parts
+                 if p.part_kind == "tool-return" and isinstance(p.content, dict)]
+        retried = any(p.part_kind == "retry-prompt" for m in messages for p in m.parts)
+        names = [n for n, _ in calls]
+        if "get_household_cluster" not in names:
+            return ModelResponse(parts=[TextPart("Decision: list households and their plots first."),
+                                        ToolCallPart("get_household_cluster", {"cluster_id": "GLZ-001", "crop": "maize"})])
+        rain = {c["location"]["cell_id"]: c for n, c in calls if n == "get_rainfall_evidence"}
+        hh = next(c for n, c in calls if n == "get_household_cluster")
+        mine = next(h for h in hh["households"] if h["household_id"] == target)
+        want = other if (wrong_cell_first and not retried) else f"PL-{target[3:]}"
+        cell = mine["plot"]["weather_cell_id"] if want != other else None
+        if want == other and not rain:
+            return ModelResponse(parts=[TextPart("Decision: check rainfall for a plot."),
+                                        ToolCallPart("get_rainfall_evidence", {"plot_id": other})])
+        if want != other and mine["plot"]["weather_cell_id"] not in rain:
+            return ModelResponse(parts=[TextPart("Decision: need the rainfall for this household's own cell."),
+                                        ToolCallPart("get_rainfall_evidence", {"plot_id": want})])
+        used = next(iter(rain.values())) if want == other else rain[mine["plot"]["weather_cell_id"]]
+        ids = [hh["audit_call_id"], used["audit_call_id"]]
+        args = {"conclusion": "Plot-level check.", "data_gaps": [], "evidence_ids": ids,
+                "household_recommendations": [{"household_id": target, "recommendation": "delay_planting",
+                                               "rationale": f"Dry spell {used['observed']['current_dry_spell_days']} d in its own cell.",
+                                               "evidence_ids": ids, "missing_data": []}]}
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
+    return FunctionModel(fn)

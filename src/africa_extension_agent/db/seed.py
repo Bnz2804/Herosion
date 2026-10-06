@@ -16,7 +16,7 @@ import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
 
-from .. import config
+from .. import config, geo
 
 AS_OF = date(2026, 4, 10)
 SCHEMA = Path(__file__).with_name("schema.sql")
@@ -39,7 +39,7 @@ def _farmer_codes(n: int, rng: random.Random) -> list[str]:
 
 CLUSTERS = [
     ("GLZ-001", "Glazoué cluster 1", "Collines", "Glazoué", "transition_bimodal", 7.97, 2.24),
-    ("GLZ-002", "Glazoué cluster 2", "Collines", "Glazoué", "transition_bimodal", 7.99, 2.30),
+    ("GLZ-002", "Glazoué cluster 2", "Collines", "Glazoué", "transition_bimodal", 7.99, 2.40),
     ("ZGB-001", "Zogbodomey cluster 1", "Zou", "Zogbodomey", "coastal_bimodal", 6.95, 2.30),
     ("KAN-001", "Kandi cluster 1", "Alibori", "Kandi", "sudanian_unimodal", 11.13, 2.94),
 ]
@@ -173,6 +173,7 @@ def seed(db_path: Path | str | None = None, force: bool = True) -> Path:
         path.unlink()
     conn = sqlite3.connect(path)
     conn.executescript(SCHEMA.read_text())
+    conn.executescript(SCHEMA.with_name("schema_geo.sql").read_text())
     conn.execute("INSERT INTO meta VALUES ('as_of_date', ?)", (AS_OF.isoformat(),))
     conn.execute("INSERT INTO meta VALUES ('data_provenance', 'SYNTHETIC - fabricated for development')")
     conn.executemany("INSERT INTO clusters VALUES (?,?,?,?,?,?,?)", CLUSTERS)
@@ -202,6 +203,80 @@ def seed(db_path: Path | str | None = None, force: bool = True) -> Path:
         [(f"PR-{i:03d}", c, d, p, cr, sev, sc, af, stg, f"SCOUT-{(i % 3) + 1}")
          for i, (c, d, p, cr, sev, sc, af, stg) in enumerate(PESTS, 1)],
     )
+    _seed_geo(conn)
     conn.commit()
     conn.close()
     return path
+
+
+# --- plot geometry, field candidates and plot-level weather (all synthetic) -------------------------------
+# (suffix: (lat, lon, polygon_ha, geometry_source, verification_level, gps_accuracy_m, tenure))
+GLZ001_PLOTS = {
+    "001": (7.9720, 2.2300, 1.45, "officer_gps", "officer_surveyed", 4.0, "customary"),
+    "002": (7.9735, 2.2345, 0.85, "satellite_field", "officer_matched", None, "customary"),
+    "003": (7.9680, 2.2420, 2.10, "satellite_field", "satellite_candidate", None, "unknown"),
+    "004": (7.9710, 2.2360, 0.98, "officer_gps", "officer_surveyed", 5.0, "leased"),
+    "005": (7.9750, 2.2280, 1.15, "satellite_field", "officer_matched", None, "customary"),
+    "006": (7.9690, 2.2310, 0.92, "satellite_field", "officer_matched", None, "sharecropped"),
+    "008": (7.9760, 2.2390, 1.38, "satellite_field", "officer_matched", None, "customary"),
+    "009": (7.9710, 2.2640, 1.30, "officer_gps", "officer_surveyed", 6.0, "certificate"),
+    "010": (7.9660, 2.2440, 0.52, "satellite_field", "officer_matched", None, "customary"),
+    "011": (7.9740, 2.2690, 1.65, "satellite_field", "officer_matched", None, "customary"),
+    "012": (7.9700, 2.2610, 1.35, "satellite_field", "satellite_candidate", None, "unknown"),  # area mismatch (declared 0.7)
+}
+# (candidate suffix, lat, lon, ha)
+CANDIDATES = [("0001", 7.9705, 2.2395, 1.05), ("0002", 7.9712, 2.2410, 0.40), ("0003", 7.9690, 2.2370, 1.90),
+              ("0004", 7.9702, 2.2612, 0.72), ("0005", 7.9683, 2.2418, 1.95), ("0006", 7.9755, 2.2650, 0.60)]
+
+
+def _plot_id(household_id: str) -> str:
+    return "PL-" + household_id.removeprefix("HH-")
+
+
+def _cell(conn: sqlite3.Connection, lat: float, lon: float) -> str:
+    c = geo.grid_cell(lat, lon)
+    conn.execute("INSERT OR IGNORE INTO weather_cells VALUES (?,?,?,?)", (c["cell_id"], c["center_lat"], c["center_lon"], geo.GRID_STEP))
+    return c["cell_id"]
+
+
+def _seed_geo(conn: sqlite3.Connection) -> None:
+    now = AS_OF.isoformat() + "T00:00:00+00:00"
+    clusters = {r[0]: (r[1], r[2], r[3]) for r in conn.execute("SELECT cluster_id, latitude, longitude, commune FROM clusters")}
+    for hid, cid in conn.execute("SELECT household_id, cluster_id FROM households ORDER BY household_id").fetchall():
+        spec = GLZ001_PLOTS.get(hid.rsplit("-", 1)[1]) if cid == "GLZ-001" else None
+        clat, clon, commune = clusters[cid]
+        if spec:
+            lat, lon, ha, src, level, acc, tenure = spec
+            g = geo.summarize(geo.square_polygon(lat, lon, ha, jitter=0.03))
+            row = (_plot_id(hid), hid, g["geojson"], g["lat"], g["lon"], g["area_ha"], src, level, acc,
+                   AS_OF.isoformat(), tenure, f"{commune} (village A)", commune, None, None, None)
+            if level == "officer_matched":
+                row = row[:-2] + ("Officer demo", now)
+        else:  # no geometry known: located only to the village/cluster centroid
+            row = (_plot_id(hid), hid, None, clat, clon, None, "village_only", "declared", None, None,
+                   "unknown", f"{commune} (village centroid)", commune, None, None, None)
+        conn.execute("INSERT INTO plots VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
+    for suf, lat, lon, ha in CANDIDATES:
+        g = geo.summarize(geo.square_polygon(lat, lon, ha, jitter=0.05))
+        conn.execute("INSERT INTO field_candidates VALUES (?,?,?,?,?,?,?,?,?)",
+                     (f"FC-GLZ-{suf}", "synthetic-fields-demo", suf, g["geojson"], g["lat"], g["lon"], g["area_ha"], 0.7, now))
+
+    # weather grid: observed + forecast per cell
+    stamp = now
+    def put(cell, series, fc_cluster):
+        for d, mm in series.items():
+            if mm is not None:
+                conn.execute("INSERT OR REPLACE INTO weather_obs_grid VALUES (?,?,?,?,?)", (cell, d.isoformat(), mm, "synthetic-grid", stamp))
+        if fc_cluster:
+            for (_c, d, mm, p, issued, _src) in _forecast(fc_cluster):
+                conn.execute("INSERT OR REPLACE INTO weather_fc_grid VALUES (?,?,?,?,?,?,?)", (cell, d, mm, p, issued, "synthetic-grid-forecast", stamp))
+    series = {"GLZ-001": _rain_glz001(), "GLZ-002": _rain_glz002(), "ZGB-001": _rain_zgb001(), "KAN-001": _rain_kan001()}
+    cell_a = _cell(conn, 7.972, 2.235)
+    put(cell_a, series["GLZ-001"], "GLZ-001")
+    cell_b = _cell(conn, 7.971, 2.265)           # 5 km east: a local storm on 8-9 April reached this cell only
+    sb = dict(series["GLZ-001"]); sb[date(2026, 4, 8)] = 24.0; sb[date(2026, 4, 9)] = 6.0; sb[date(2026, 4, 10)] = 0.0
+    put(cell_b, sb, "GLZ-001")
+    for cid in ("GLZ-002", "ZGB-001", "KAN-001"):
+        put(_cell(conn, clusters[cid][0], clusters[cid][1]), series[cid], cid if cid != "GLZ-002" else None)
+    for (pid, lat, lon) in conn.execute("SELECT plot_id, centroid_lat, centroid_lon FROM plots").fetchall():
+        _cell(conn, lat, lon)  # every plot resolves to a known cell, with or without data

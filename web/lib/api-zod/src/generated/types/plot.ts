@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PlotDataTier } from './plotDataTier';
+import type { PlotGeometry } from './plotGeometry';
+import type { PlotLocationConfidence } from './plotLocationConfidence';
+import type { PlotLocationPrecision } from './plotLocationPrecision';
 
 export interface Plot {
   plotId: string;
@@ -19,4 +22,32 @@ export interface Plot {
   /** @nullable */
   lastObservationDate?: Date | null;
   dataTier: PlotDataTier;
+  /**
+     * cadastral | officer_surveyed | officer_matched | satellite_candidate | declared
+     * @nullable
+     */
+  verificationLevel?: string | null;
+  /** @nullable */
+  geometrySource?: string | null;
+  /** @nullable */
+  locationConfidence?: PlotLocationConfidence;
+  /** @nullable */
+  locationPrecision?: PlotLocationPrecision;
+  /** @nullable */
+  centroidLat?: number | null;
+  /** @nullable */
+  centroidLon?: number | null;
+  /** @nullable */
+  areaMappedHa?: number | null;
+  /** @nullable */
+  areaCheck?: string | null;
+  /** @nullable */
+  weatherCellId?: string | null;
+  /** @nullable */
+  tenureType?: string | null;
+  /**
+     * GeoJSON Polygon
+     * @nullable
+     */
+  geometry?: PlotGeometry;
 }

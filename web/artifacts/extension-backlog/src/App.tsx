@@ -11,9 +11,9 @@ import {
   getGetClusterPlotsQueryKey, getGetOverviewQueryKey, getHealthCheckQueryKey, useApproveAdvisory,
   useCreateEvidenceRun, useCreateManualAdvisory, useGetAdvisories, useGetAgentStatus,
   useGetAuditEvents, useGetClusterEvidence, useGetClusterPlots, useGetClusters,
-  useGetOverview, useHealthCheck, useSubmitAgentDrafts,
+  useGetOverview, useHealthCheck, useSubmitAgentDrafts, useGetPlotFieldCandidates, useMatchPlotField, getGetPlotFieldCandidatesQueryKey,
 } from '@workspace/api-client-react';
-import type { Advisory, EvidenceItem, EvidenceRun } from '@workspace/api-client-react';
+import type { Advisory, EvidenceItem, EvidenceRun, Plot, FieldCandidate } from '@workspace/api-client-react';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -156,6 +156,70 @@ function AgentRunPanel({ run, selection, onToggle, submitter, setSubmitter, pend
   </div>;
 }
 
+const CONF_TONE: Record<string, 'good' | 'warning' | 'neutral'> = { high: 'good', medium: 'good', low: 'warning', very_low: 'warning' };
+const CONF_TEXT: Record<string, string> = { high: 'Location: high', medium: 'Location: medium', low: 'Location: low', very_low: 'Location: village only' };
+const LEVEL_TEXT: Record<string, string> = { cadastral: 'Registered boundary', officer_surveyed: 'Officer GPS survey', officer_matched: 'Satellite field, officer-confirmed', satellite_candidate: 'Satellite field, not confirmed', declared: 'Declared only' };
+
+function PlotCards({ plots, onConfirm }: { plots: Plot[]; onConfirm: (plotId: string) => void }) {
+  return <ul className="divide-y divide-border" data-testid="list-plots">{plots.map(plot => {
+    const protectedPlot = plot.verificationLevel === 'cadastral' || plot.verificationLevel === 'officer_surveyed';
+    const mismatch = plot.areaCheck?.startsWith('mismatch');
+    return <li key={plot.plotId} className="px-4 py-3.5" data-testid={`row-plot-${plot.plotId}`}>
+      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{plot.householdName}</p><p className="font-data text-[9px] text-muted-foreground">{plot.plotId} · {plot.crop} · {plot.areaHa} ha · {plot.variety}</p></div><StatusPill>{plot.plantingStatus}</StatusPill></div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5"><StatusPill tone={CONF_TONE[plot.locationConfidence ?? 'very_low']}>{CONF_TEXT[plot.locationConfidence ?? 'very_low']}</StatusPill><span className="text-[10px] text-muted-foreground">{LEVEL_TEXT[plot.verificationLevel ?? 'declared'] ?? plot.verificationLevel}</span></div>
+      {mismatch && <p className="mt-1.5 text-[10px] text-[#a85143]">Mapped area differs from declared: {plot.areaCheck}</p>}
+      {plot.weatherCellId && <p className="mt-1 font-data text-[8px] text-muted-foreground">Weather cell {plot.weatherCellId} (about 5 km estimate)</p>}
+      {!protectedPlot && <button type="button" onClick={() => onConfirm(plot.plotId)} className="mt-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#315840] px-3 text-xs font-semibold text-[#315840] active:bg-[#dce9df]" data-testid={`button-confirm-field-${plot.plotId}`}><MapPin size={14} />{plot.locationPrecision === 'polygon' ? 'Re-check field boundary' : 'Find and confirm this field'}</button>}
+    </li>;
+  })}</ul>;
+}
+
+function FieldMap({ origin, current, candidates, selected, onSelect }: { origin: { lat: number; lon: number }; current?: Plot['geometry']; candidates: FieldCandidate[]; selected: string | null; onSelect: (id: string) => void }) {
+  const kx = Math.cos(origin.lat * Math.PI / 180);
+  const ring = (g: unknown): [number, number][] => { const c = (g as { coordinates?: number[][][] } | null)?.coordinates?.[0] ?? []; return c.map(([lon, lat]) => [lon * kx, -lat] as [number, number]); };
+  const rings = candidates.map(c => ({ c, pts: ring(c.geometry) }));
+  const cur = current ? ring(current) : [];
+  const all = [...rings.flatMap(r => r.pts), ...cur, [origin.lon * kx, -origin.lat] as [number, number]];
+  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+  const pad = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.12 || 0.0005;
+  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad, w = Math.max(...xs) - Math.min(...xs) + 2 * pad, h = Math.max(...ys) - Math.min(...ys) + 2 * pad;
+  const pts = (p: [number, number][]) => p.map(([x, y]) => `${x},${y}`).join(' ');
+  return <svg viewBox={`${x0} ${y0} ${w} ${h}`} className="h-56 w-full rounded-lg border border-border bg-[#eef1e6]" role="img" aria-label="Candidate fields around the plot. Tap a field to select it." preserveAspectRatio="xMidYMid meet">
+    {cur.length > 0 && <polygon points={pts(cur)} fill="none" stroke="#765a22" strokeWidth={w / 160} strokeDasharray={`${w / 60} ${w / 80}`} />}
+    {rings.map(({ c, pts: p }, i) => <g key={c.candidateId} onClick={() => onSelect(c.candidateId)} className="cursor-pointer"><polygon points={pts(p)} fill={selected === c.candidateId ? '#315840' : '#d9b36a'} fillOpacity={selected === c.candidateId ? 0.75 : 0.5} stroke={selected === c.candidateId ? '#1d3a28' : '#765a22'} strokeWidth={w / 200} /><text x={p.reduce((a, q) => a + q[0], 0) / p.length} y={p.reduce((a, q) => a + q[1], 0) / p.length} fontSize={w / 22} textAnchor="middle" dominantBaseline="middle" fill="#1d1d1d" style={{ pointerEvents: 'none' }}>{i + 1}</text></g>)}
+    <circle cx={origin.lon * kx} cy={-origin.lat} r={w / 70} fill="#a85143" stroke="#fff" strokeWidth={w / 400} />
+  </svg>;
+}
+
+function FieldMatchSheet({ plotId, current, onClose, onDone }: { plotId: string; current?: Plot['geometry']; onClose: () => void; onDone: () => void }) {
+  const q = useGetPlotFieldCandidates(plotId, { query: { queryKey: getGetPlotFieldCandidatesQueryKey(plotId) } });
+  const [sel, setSel] = useState<string | null>(null);
+  const [officer, setOfficer] = useState('');
+  const [msg, setMsg] = useState('');
+  const match = useMatchPlotField();
+  const data = q.data;
+  return <div className="fixed inset-0 z-50 flex items-end bg-black/40" role="dialog" aria-modal="true" aria-label="Confirm field" onClick={onClose}>
+    <div className="max-h-[88dvh] w-full overflow-y-auto rounded-t-2xl bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))]" onClick={e => e.stopPropagation()}>
+      <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
+      <div className="flex items-start justify-between gap-3"><div><p className="font-data text-[9px] uppercase tracking-[.15em] text-muted-foreground">Confirm field</p><h3 className="font-display text-lg">{plotId}</h3></div><button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-lg text-lg" aria-label="Close">×</button></div>
+      {q.isLoading && <Skeleton rows={3} />}
+      {q.isError && <QueryError retry={() => void q.refetch()} />}
+      {data && <>
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{data.note} Red dot: {data.origin.hasPolygon ? 'plot centre' : 'village centre (exact plot unknown)'}. Tap a numbered field or a row.</p>
+        {data.candidates.length === 0 ? <p className="mt-4 rounded-lg bg-muted p-3 text-xs">No detected fields within {data.radiusKm} km. Import field data for this area, or capture the boundary in the field.</p> : <>
+          <div className="mt-3"><FieldMap origin={data.origin} current={current} candidates={data.candidates} selected={sel} onSelect={setSel} /></div>
+          <ul className="mt-3 space-y-2">{data.candidates.map((c, i) => <li key={c.candidateId}><button type="button" disabled={c.alreadyMatched} onClick={() => setSel(c.candidateId)} className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left ${sel === c.candidateId ? 'border-[#315840] bg-[#dce9df]' : 'border-border'} disabled:opacity-50`} data-testid={`button-candidate-${c.candidateId}`}>
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#d9b36a] text-xs font-semibold">{i + 1}</span>
+            <span className="min-w-0 flex-1"><span className="block text-xs font-semibold">{c.areaHa} ha · {c.distanceM} m away</span><span className="block text-[10px] text-muted-foreground">{c.alreadyMatched ? 'Already matched to another plot' : c.reasons.join(' · ')}</span></span>
+            <span className="font-data text-[9px] text-muted-foreground">{Math.round(c.score * 100)}%</span></button></li>)}</ul>
+          <input value={officer} onChange={e => setOfficer(e.target.value)} placeholder="Your full name (confirming officer)" className="mt-3 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-primary" data-testid="input-matching-officer" />
+          <button type="button" disabled={!sel || officer.trim().length < 2 || match.isPending} onClick={() => { setMsg(''); match.mutate({ plotId, data: { candidateId: sel!, officerName: officer.trim() } }, { onSuccess: () => { onDone(); onClose(); }, onError: err => setMsg((err as { data?: { error?: string } })?.data?.error ?? 'Could not save the match.') }); }} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#315840] px-4 text-sm font-semibold text-white disabled:opacity-50" data-testid="button-confirm-match">{match.isPending ? 'Saving' : 'Confirm: this is the farmer\u2019s field'}</button>
+          {msg && <p className="mt-2 text-[11px] text-[#a85143]" role="alert">{msg}</p>}
+          <p className="mt-2 text-[10px] text-muted-foreground">Confirm only after checking with the farmer or on site. Your name is recorded in the audit trail.</p></>}
+      </>}
+    </div></div>;
+}
+
 function Capability({ label, value, active }: { label: string; value: string; active: boolean }) {
   return <div><p className="uppercase tracking-[.12em] text-[#8d8065]">{label}</p><p className={`mt-1 font-semibold ${active ? 'text-[#315840]' : 'text-[#765a35]'}`}>{value}</p></div>;
 }
@@ -199,6 +263,7 @@ function Workbench() {
   const [rationale, setRationale] = useState('');
   const [selectedEvidence, setSelectedEvidence] = useState<string[]>([]);
   const [formMessage, setFormMessage] = useState('');
+  const [matchPlotId, setMatchPlotId] = useState<string | null>(null);
   const createRun = useCreateEvidenceRun();
   const createAdvisory = useCreateManualAdvisory();
   const approve = useApproveAdvisory();
@@ -249,7 +314,8 @@ function Workbench() {
   const page = path === '/investigate' ? 'investigate' : path === '/advisories' ? 'advisories' : path === '/audit' ? 'audit' : 'overview';
 
   return <Shell active={path}>
-    <AgentNotice status={statusQuery.data} />
+    {matchPlotId && <FieldMatchSheet plotId={matchPlotId} current={plotsQuery.data?.find(p => p.plotId === matchPlotId)?.geometry} onClose={() => setMatchPlotId(null)} onDone={() => { void plotsQuery.refetch(); refreshLists(); }} />}
+      <AgentNotice status={statusQuery.data} />
     {page === 'overview' && <section className="rise">
       <SectionHeading eyebrow="Field operations · 01" title="Good morning, officer." description="A clear view of field clusters, source records, and the advice awaiting a second set of eyes." action={<div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-[11px] text-muted-foreground"><span className={`h-2 w-2 rounded-full ${health.data?.status === 'ok' ? 'bg-[#668a5d]' : 'bg-[#c99a50]'}`} />{health.isLoading ? 'Checking service' : health.data?.status === 'ok' ? 'Workbench connected' : 'Service status unknown'}</div>} />
       {overview.isLoading ? <Skeleton rows={2} /> : overview.isError ? <QueryError retry={() => void overview.refetch()} /> : <>
@@ -290,7 +356,7 @@ function Workbench() {
             </section>
             <section className="rounded-xl border border-card-border bg-card">
               <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><p className="font-data text-[9px] uppercase tracking-[.15em] text-muted-foreground">Household records</p><h3 className="mt-1 font-display text-[21px]">Plots in this cluster</h3></div><span className="font-data text-[10px] text-muted-foreground">{plotsQuery.data?.length ?? 0} records</span></div>
-              {plotsQuery.isLoading ? <div className="p-5"><Skeleton rows={3} /></div> : plotsQuery.isError ? <div className="p-5"><QueryError retry={() => void plotsQuery.refetch()} /></div> : plotsQuery.data?.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-xs"><thead className="bg-muted/40 font-data text-[9px] uppercase tracking-[.12em] text-muted-foreground"><tr><th className="px-5 py-3 font-medium">Household / plot</th><th className="px-3 py-3 font-medium">Crop / variety</th><th className="px-3 py-3 font-medium">Area</th><th className="px-3 py-3 font-medium">Planting</th><th className="px-5 py-3 font-medium">Observation</th></tr></thead><tbody className="divide-y divide-border">{plotsQuery.data.map(plot => <tr key={plot.plotId} className="hover:bg-muted/25" data-testid={`row-plot-${plot.plotId}`}><td className="px-5 py-3"><p className="font-semibold">{plot.householdName}</p><p className="mt-1 font-data text-[9px] text-muted-foreground">{plot.plotId} · {plot.householdId}</p></td><td className="px-3 py-3">{plot.crop}<p className="mt-1 text-[10px] text-muted-foreground">{plot.variety}</p></td><td className="px-3 py-3 font-data">{plot.areaHa} ha</td><td className="px-3 py-3"><StatusPill>{plot.plantingStatus}</StatusPill></td><td className="px-5 py-3 text-muted-foreground">{formatDate(plot.lastObservationDate)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<Sprout size={22} />} title="No plot records" detail="There are no household plot records for this cluster yet." />}
+              {plotsQuery.isLoading ? <div className="p-5"><Skeleton rows={3} /></div> : plotsQuery.isError ? <div className="p-5"><QueryError retry={() => void plotsQuery.refetch()} /></div> : plotsQuery.data?.length ? <PlotCards plots={plotsQuery.data} onConfirm={setMatchPlotId} /> : <EmptyState icon={<Sprout size={22} />} title="No plot records" detail="There are no household plot records for this cluster yet." />}
             </section>
           </div>
           <div className="space-y-5">

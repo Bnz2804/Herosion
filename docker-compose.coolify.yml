@@ -1,0 +1,59 @@
+# Coolify: New Resource -> Docker Compose (from your Git repo) -> compose file: /docker-compose.coolify.yml
+# Fill the variables in Coolify's Environment tab (the ones marked :? are required).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: herosion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong password}
+      POSTGRES_DB: herosion
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U herosion -d herosion"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  agent:                       # internal only: never give this service a domain or published port
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    restart: unless-stopped
+    environment:
+      EXTENSION_AGENT_MODEL: ${EXTENSION_AGENT_MODEL:-mistral:mistral-large-latest}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set a long random token}
+      SEED_SYNTHETIC: ${SEED_SYNTHETIC:-true}
+      EXTENSION_AGENT_PSEUDONYM_SALT: ${PSEUDONYM_SALT:-change-me}
+    volumes:
+      - agentdata:/data
+    expose:
+      - "8000"
+
+  web:                         # the only public service: attach your domain to port 5000 in Coolify
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      agent:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://herosion:${POSTGRES_PASSWORD}@db:5432/herosion
+      AGENT_SERVICE_URL: http://agent:8000
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN}
+      APP_BASIC_AUTH: ${APP_BASIC_AUTH:?set user:password to protect the app}
+      MAX_AGENT_RUNS_PER_HOUR: ${MAX_AGENT_RUNS_PER_HOUR:-30}
+    expose:
+      - "5000"
+    # No domain yet? Uncomment to test via http://<VPS-IP>:8080 (geolocation/install need HTTPS, so prefer a domain):
+    # ports:
+    #   - "8080:5000"
+
+volumes:
+  pgdata:
+  agentdata:

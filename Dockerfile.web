@@ -1,0 +1,16 @@
+# Web: Express API + built React UI served from the same origin. Needs Postgres and the agent service.
+FROM node:22-slim
+RUN npm install -g pnpm@10
+WORKDIR /w
+COPY web/ ./
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+ && pnpm run typecheck:libs \
+ && pnpm --filter @workspace/api-server run build \
+ && PORT=5173 BASE_PATH=/ pnpm --filter @workspace/extension-backlog run build
+COPY docker/web-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENV NODE_ENV=production PORT=5000 STATIC_DIR=/w/artifacts/extension-backlog/dist/public
+EXPOSE 5000
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:5000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["/entrypoint.sh"]

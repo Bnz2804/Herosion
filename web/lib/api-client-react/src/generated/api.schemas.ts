@@ -50,6 +50,36 @@ export const PlotDataTier = {
   local_test_data: 'local_test_data',
 } as const;
 
+/**
+ * @nullable
+ */
+export type PlotLocationConfidence = typeof PlotLocationConfidence[keyof typeof PlotLocationConfidence] | null;
+
+
+export const PlotLocationConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+  very_low: 'very_low',
+} as const;
+
+/**
+ * @nullable
+ */
+export type PlotLocationPrecision = typeof PlotLocationPrecision[keyof typeof PlotLocationPrecision] | null;
+
+
+export const PlotLocationPrecision = {
+  polygon: 'polygon',
+  village_centroid: 'village_centroid',
+} as const;
+
+/**
+ * GeoJSON Polygon
+ * @nullable
+ */
+export type PlotGeometry = { [key: string]: unknown } | null;
+
 export interface Plot {
   plotId: string;
   householdId: string;
@@ -62,6 +92,82 @@ export interface Plot {
   /** @nullable */
   lastObservationDate?: string | null;
   dataTier: PlotDataTier;
+  /**
+     * cadastral | officer_surveyed | officer_matched | satellite_candidate | declared
+     * @nullable
+     */
+  verificationLevel?: string | null;
+  /** @nullable */
+  geometrySource?: string | null;
+  /** @nullable */
+  locationConfidence?: PlotLocationConfidence;
+  /** @nullable */
+  locationPrecision?: PlotLocationPrecision;
+  /** @nullable */
+  centroidLat?: number | null;
+  /** @nullable */
+  centroidLon?: number | null;
+  /** @nullable */
+  areaMappedHa?: number | null;
+  /** @nullable */
+  areaCheck?: string | null;
+  /** @nullable */
+  weatherCellId?: string | null;
+  /** @nullable */
+  tenureType?: string | null;
+  /**
+     * GeoJSON Polygon
+     * @nullable
+     */
+  geometry?: PlotGeometry;
+}
+
+export type FieldCandidateGeometry = { [key: string]: unknown };
+
+export interface FieldCandidate {
+  candidateId: string;
+  source: string;
+  areaHa: number;
+  distanceM: number;
+  score: number;
+  reasons: string[];
+  alreadyMatched: boolean;
+  geometry: FieldCandidateGeometry;
+}
+
+export type FieldCandidatesOrigin = {
+  lat: number;
+  lon: number;
+  hasPolygon: boolean;
+};
+
+export interface FieldCandidates {
+  plotId: string;
+  verificationLevel: string;
+  /** @nullable */
+  declaredAreaHa?: number | null;
+  origin: FieldCandidatesOrigin;
+  candidates: FieldCandidate[];
+  radiusKm: number;
+  note: string;
+}
+
+export interface MatchFieldInput {
+  candidateId: string;
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  officerName: string;
+}
+
+export interface PlotMatchResult {
+  plotId: string;
+  candidateId: string;
+  verificationLevel: string;
+  previousVerification: string;
+  weatherCellId: string;
+  matchedBy: string;
 }
 
 export type EvidenceItemKind = typeof EvidenceItemKind[keyof typeof EvidenceItemKind];
@@ -362,3 +468,4 @@ export interface AuditEvent {
   advisoryId?: string | null;
   dataTier?: AuditEventDataTier;
 }
+

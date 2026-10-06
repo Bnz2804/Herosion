@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+geo = ["pyarrow>=15", "shapely>=2"]
 
 [project.scripts]
 extension-agent = "africa_extension_agent.cli:app"
@@ -26,7 +27,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/africa_extension_agent"]
-include = ["src/africa_extension_agent/db/schema.sql"]
+include = ["src/africa_extension_agent/db/schema.sql", "src/africa_extension_agent/db/schema_geo.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
