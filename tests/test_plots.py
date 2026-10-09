@@ -162,3 +162,56 @@ def test_service_exposes_candidates_match_and_cell_specific_evidence(db):
     ids = run["householdRecommendations"][0]["evidenceIds"]
     assert any(i.startswith("rainfall:g050_7.975_2.225") for i in ids) and not any("2.275" in i for i in ids)
     assert "plot:PL-GLZ001-001" in ids and not any(i.startswith("plot:") and i != "plot:PL-GLZ001-001" for i in ids)
+
+
+def test_validator_rejects_misread_numbers_and_accepts_the_corrected_answer(db):
+    out, session, state = asyncio.run(run_agent("GLZ-001 maize: should HH-GLZ001-001 delay?", model=make_plot_stub(wrong_facts_first=True),
+                                               db_path=str(db), emit=lambda k, x: None))
+    assert out.cell_facts[0].current_dry_spell_days == 8                      # corrected after the validator's pushback
+    assert out.cell_facts[0].cell_id == "g050_7.975_2.225"
+
+
+def test_validator_checks_onset_against_the_crop_rule():
+    from africa_extension_agent.agent import CellFacts, RunState
+    st = RunState(rain={"call-1": {"cell": "c", "dry": 1, "last7": 30.4, "wet": "2026-04-18", "max3": 51.0}}, onset_mm=20.0)
+    ok = CellFacts(cell_id="c", rainfall_call_id="call-1", current_dry_spell_days=1, rain_last_7d_mm=30.4,
+                   forecast_first_wet_day="2026-04-18", onset_rule_met_in_window=True)
+    assert ok.onset_rule_met_in_window == (st.rain["call-1"]["max3"] >= st.onset_mm)
+
+
+def _run_target(db, target, **kw):
+    events = []
+    out, session, state = asyncio.run(run_agent(f"GLZ-001 maize: should {target} delay?", model=make_plot_stub(target=target, **kw),
+                                               db_path=str(db), emit=lambda k, x: events.append((k, x))))
+    return out.household_recommendations[0].recommendation, session
+
+
+def test_delay_rejected_when_planned_date_is_after_the_rain_returns(db):
+    # HH-GLZ001-003 plans to plant 2026-04-20; forecast rain returns 2026-04-18 -> "delay" must be rejected, then corrected
+    rec, _ = _run_target(db, "HH-GLZ001-003", delay_wrongly_first=True)
+    assert rec == "proceed_with_planting"
+
+
+def test_delay_still_allowed_when_planting_before_or_on_the_rain_return(db):
+    assert _run_target(db, "HH-GLZ001-001")[0] == "delay_planting"          # plans 04-12, rain 04-18
+    assert _run_target(db, "HH-GLZ001-012")[0] == "delay_planting"          # plans 04-18 = rain return day: judgment call, allowed
+
+
+def test_conclusion_is_generated_from_the_validated_table_and_cannot_contradict_it(db):
+    from africa_extension_agent.agent import CellFacts, ExtensionAdvice, HouseholdRecommendation, RunState, build_conclusion
+    rec = lambda h, k: HouseholdRecommendation(household_id=h, recommendation=k, rationale="x", evidence_ids=["c"])  # noqa: E731
+    adv = ExtensionAdvice(conclusion="Delay everyone!", evidence_ids=["c"], household_recommendations=[
+        rec("HH-A", "delay_planting"), rec("HH-B", "may_not_exist" if False else "proceed_with_planting"), rec("HH-C", "insufficient_evidence")],
+        cell_facts=[CellFacts(cell_id="g1", rainfall_call_id="c", current_dry_spell_days=1, rain_last_7d_mm=30.4,
+                              forecast_first_wet_day="2026-04-18", onset_rule_met_in_window=True)])
+    text = build_conclusion(adv, RunState(as_of="2026-04-10"))
+    assert "Delay everyone" not in text and "Dataset date 2026-04-10" in text
+    assert "Consider delaying planting (1): HH-A." in text and "May proceed (1): HH-B." in text and "Insufficient evidence (1): HH-C." in text
+    assert "1 d dry spell" in text and "30.4 mm" in text and "onset rule met" in text
+
+
+def test_run_returns_generated_conclusion_and_keeps_the_agent_note(db):
+    out, session, state = asyncio.run(run_agent("GLZ-001 maize: should HH-GLZ001-001 delay?", model=make_plot_stub(),
+                                               db_path=str(db), emit=lambda k, x: None))
+    assert out.conclusion.startswith("Dataset date 2026-04-10.") and "HH-GLZ001-001" in out.conclusion
+    assert state.agent_note == "Plot-level check."
