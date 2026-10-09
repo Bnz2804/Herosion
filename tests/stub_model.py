@@ -86,7 +86,7 @@ def make_stub(bad_household_first: bool = False) -> FunctionModel:
     return FunctionModel(fn)
 
 
-def make_plot_stub(wrong_cell_first: bool = False) -> FunctionModel:
+def make_plot_stub(wrong_cell_first: bool = False, wrong_facts_first: bool = False) -> FunctionModel:
     """TEST DOUBLE: judges ONE household with plot-level rainfall. If wrong_cell_first, it first cites the
     rainfall call of a plot in a different cell, and only corrects after the validator pushes back."""
     target, other = "HH-GLZ001-001", "PL-GLZ001-009"
@@ -112,7 +112,13 @@ def make_plot_stub(wrong_cell_first: bool = False) -> FunctionModel:
                                         ToolCallPart("get_rainfall_evidence", {"plot_id": want})])
         used = next(iter(rain.values())) if want == other else rain[mine["plot"]["weather_cell_id"]]
         ids = [hh["audit_call_id"], used["audit_call_id"]]
-        args = {"conclusion": "Plot-level check.", "data_gaps": [], "evidence_ids": ids,
+        o = used["observed"]
+        facts = {"cell_id": used["location"]["cell_id"], "rainfall_call_id": used["audit_call_id"],
+                 "current_dry_spell_days": o["current_dry_spell_days"], "rain_last_7d_mm": o["total_last_7d"]["mm"],
+                 "forecast_first_wet_day": used["forecast"]["first_wet_day"], "onset_rule_met_in_window": None}
+        if wrong_facts_first and not retried:
+            facts["current_dry_spell_days"] = 8 if o["current_dry_spell_days"] != 8 else 1   # a misread
+        args = {"cell_facts": [facts], "conclusion": "Plot-level check.", "data_gaps": [], "evidence_ids": ids,
                 "household_recommendations": [{"household_id": target, "recommendation": "delay_planting",
                                                "rationale": f"Dry spell {used['observed']['current_dry_spell_days']} d in its own cell.",
                                                "evidence_ids": ids, "missing_data": []}]}

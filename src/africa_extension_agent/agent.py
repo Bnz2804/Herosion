@@ -48,6 +48,11 @@ Evidence rules (strict):
   For a question about specific households, call get_rainfall_evidence with plot_id (any plot in the cell)
   once per distinct weather_cell_id among the households you judge, and judge every household with ITS OWN
   cell's result. Use the cluster-level call (cluster_id only) only when no plot is available.
+- Never restate or re-derive weather numbers yourself. Put each cell's numbers into `cell_facts` EXACTLY as the
+  tool returned them (and set onset_rule_met_in_window by comparing observed.max_3day_total.mm with the crop's
+  onset_rain_mm_3d). Your conclusion and rationales may only describe a cell using what is in its cell_facts.
+  Different cells can differ: never say one cell's conditions apply to another without checking its numbers.
+  The answer is rejected if the numbers differ from the tool results.
 - State how well each plot's location is known (`verification_level`, `location_confidence`). For
   `village_centroid` precision or an unconfirmed `satellite_candidate`, say the weather is for an
   approximate location and lower your certainty; mention an `area_check` mismatch. Never present
@@ -68,9 +73,23 @@ class HouseholdRecommendation(BaseModel):
     missing_data: list[str] = Field(default_factory=list)
 
 
+class CellFacts(BaseModel):
+    """Numbers per weather cell, copied from the tool result. Checked against the real result."""
+    cell_id: str
+    rainfall_call_id: str = Field(description="audit_call_id of the get_rainfall_evidence call for this cell")
+    current_dry_spell_days: int | None = Field(description="from observed.current_dry_spell_days, null if unknown")
+    rain_last_7d_mm: float | None = Field(description="from observed.total_last_7d.mm, null if no data")
+    forecast_first_wet_day: str | None = Field(description="from forecast.first_wet_day, null if none")
+    onset_rule_met_in_window: bool | None = Field(
+        description="true if observed.max_3day_total.mm >= the crop's onset_rain_mm_3d from get_crop_context; "
+                    "null if the crop rule was not retrieved or there is no data")
+
+
 class ExtensionAdvice(BaseModel):
     conclusion: str = Field(description="2-4 sentence evidence-backed answer for the extension officer")
     household_recommendations: list[HouseholdRecommendation]
+    cell_facts: list[CellFacts] = Field(default_factory=list,
+                                        description="One entry per weather cell you retrieved rainfall for")
     data_gaps: list[str] = Field(default_factory=list, description="Evidence that was missing or weak")
     evidence_ids: list[str] = Field(default_factory=list)
     status: Literal["DRAFT_PENDING_HUMAN_APPROVAL"] = "DRAFT_PENDING_HUMAN_APPROVAL"
@@ -81,7 +100,9 @@ class RunState:
     call_ids: set[str] = field(default_factory=set)
     households: dict[str, dict] = field(default_factory=dict)
     tool_calls: list[str] = field(default_factory=list)
-    call_cells: dict[str, str] = field(default_factory=dict)  # audit_call_id -> weather cell of plot-level rainfall calls
+    call_cells: dict[str, str] = field(default_factory=dict)
+    rain: dict[str, dict] = field(default_factory=dict)   # audit_call_id -> numbers from a plot-level rainfall result
+    onset_mm: float | None = None                           # crop onset rule from get_crop_context  # audit_call_id -> weather cell of plot-level rainfall calls
 
 
 Emit = Callable[[str, str], None]  # (kind, text)
@@ -117,6 +138,32 @@ def build_agent(model: str | Model, session_id: str, db_path: str) -> Agent[RunS
         bad = [e for e in out.evidence_ids if e not in st.call_ids]
         if bad:
             problems.append(f"unknown top-level evidence ids {bad}")
+        # --- numbers must match the tool results exactly (the model may not restate or re-derive them) ---
+        stated = {f.cell_id for f in out.cell_facts}
+        for f in out.cell_facts:
+            real = st.rain.get(f.rainfall_call_id)
+            if real is None or real["cell"] != f.cell_id:
+                problems.append(f"cell_facts for {f.cell_id}: {f.rainfall_call_id} is not the rainfall call for that cell")
+                continue
+            if f.current_dry_spell_days != real["dry"]:
+                problems.append(f"{f.cell_id}: current_dry_spell_days is {real['dry']}, not {f.current_dry_spell_days}")
+            if (f.rain_last_7d_mm is None) != (real["last7"] is None) or (
+                    f.rain_last_7d_mm is not None and abs(f.rain_last_7d_mm - real["last7"]) > 0.05):
+                problems.append(f"{f.cell_id}: rain_last_7d_mm is {real['last7']}, not {f.rain_last_7d_mm}")
+            if f.forecast_first_wet_day != real["wet"]:
+                problems.append(f"{f.cell_id}: forecast_first_wet_day is {real['wet']}, not {f.forecast_first_wet_day}")
+            if f.onset_rule_met_in_window is not None:
+                if st.onset_mm is None:
+                    problems.append(f"{f.cell_id}: onset_rule_met_in_window must be null; get_crop_context was not called")
+                elif real["max3"] is None:
+                    problems.append(f"{f.cell_id}: no complete 3-day window of data, onset_rule_met_in_window must be null")
+                elif f.onset_rule_met_in_window != (real["max3"] >= st.onset_mm):
+                    problems.append(f"{f.cell_id}: strongest 3-day total is {real['max3']} mm against a {st.onset_mm} mm rule, "
+                                    f"so onset_rule_met_in_window is {real['max3'] >= st.onset_mm}")
+        for r in out.household_recommendations:
+            own = (st.households.get(r.household_id, {}).get("plot") or {}).get("weather_cell_id")
+            if own and st.rain and r.recommendation not in ("not_applicable", "insufficient_evidence") and own not in stated:
+                problems.append(f"{r.household_id}: no cell_facts for its weather cell {own}")
         if problems:
             raise ModelRetry("Fix these issues using only real tool results: " + "; ".join(problems))
         return out
@@ -159,6 +206,12 @@ async def run_agent(question: str, model: str | Model | None = None, db_path: st
                                 state.call_ids.add(cid)
                                 if (res.get("location") or {}).get("basis") == "plot_grid_cell":
                                     state.call_cells[cid] = res["location"]["cell_id"]
+                                    o = res["observed"]
+                                    state.rain[cid] = {"cell": res["location"]["cell_id"], "dry": o["current_dry_spell_days"],
+                                                       "last7": o["total_last_7d"]["mm"], "wet": res["forecast"]["first_wet_day"],
+                                                       "max3": (o["max_3day_total"] or {}).get("mm")}
+                            if isinstance(res.get("relevant_season"), dict):
+                                state.onset_mm = res["relevant_season"].get("onset_rain_mm_3d")
                             for h in res.get("households", []) or []:
                                 state.households[h["household_id"]] = h
                             emit("tool_result", f"[{res.get('audit_call_id', '?')}] {res.get('summary', '(no summary)')}")
