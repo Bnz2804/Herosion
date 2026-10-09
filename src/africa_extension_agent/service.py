@@ -21,7 +21,7 @@ from pydantic_ai.models import Model
 import json
 import sqlite3 as _sqlite3
 
-from . import BUILD_ID, audit, config, plot_matching
+from . import audit, config, plot_matching
 from . import evidence_catalog as ec
 from .agent import run_agent
 from .db.connection import connect_readonly
@@ -83,8 +83,7 @@ def create_app(model_override: str | Model | None = None) -> FastAPI:
         m = model_info(current_model())
         return {"modelProvider": m["provider"], "modelName": m["name"], "modelConfigured": m["configured"],
                 "advisoryGenerationAvailable": m["configured"], "weatherProvider": "synthetic_fixture",
-                "weatherLive": False, "identityMode": "self_attested_prototype", "farmerDeliveryEnabled": False,
-                "agentBuild": BUILD_ID}
+                "weatherLive": False, "identityMode": "self_attested_prototype", "farmerDeliveryEnabled": False}
 
     @app.get("/clusters", dependencies=[Depends(guard)])
     def clusters():

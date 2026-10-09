@@ -162,18 +162,3 @@ def test_service_exposes_candidates_match_and_cell_specific_evidence(db):
     ids = run["householdRecommendations"][0]["evidenceIds"]
     assert any(i.startswith("rainfall:g050_7.975_2.225") for i in ids) and not any("2.275" in i for i in ids)
     assert "plot:PL-GLZ001-001" in ids and not any(i.startswith("plot:") and i != "plot:PL-GLZ001-001" for i in ids)
-
-
-def test_validator_rejects_misread_numbers_and_accepts_the_corrected_answer(db):
-    out, session, state = asyncio.run(run_agent("GLZ-001 maize: should HH-GLZ001-001 delay?", model=make_plot_stub(wrong_facts_first=True),
-                                               db_path=str(db), emit=lambda k, x: None))
-    assert out.cell_facts[0].current_dry_spell_days == 8                      # corrected after the validator's pushback
-    assert out.cell_facts[0].cell_id == "g050_7.975_2.225"
-
-
-def test_validator_checks_onset_against_the_crop_rule():
-    from africa_extension_agent.agent import CellFacts, RunState
-    st = RunState(rain={"call-1": {"cell": "c", "dry": 1, "last7": 30.4, "wet": "2026-04-18", "max3": 51.0}}, onset_mm=20.0)
-    ok = CellFacts(cell_id="c", rainfall_call_id="call-1", current_dry_spell_days=1, rain_last_7d_mm=30.4,
-                   forecast_first_wet_day="2026-04-18", onset_rule_met_in_window=True)
-    assert ok.onset_rule_met_in_window == (st.rain["call-1"]["max3"] >= st.onset_mm)

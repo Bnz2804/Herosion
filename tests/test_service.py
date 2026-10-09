@@ -72,8 +72,3 @@ def test_crop_specific_evidence_only_for_matching_crop(db):
         for eid in rec["evidenceIds"]:
             assert by_id[eid].get("crop") in (None, rec["crop"])
     assert not any("cassava" in i or "cowpea" in i for r in run["householdRecommendations"] for i in r["evidenceIds"])
-
-
-def test_status_reports_build_id(db):
-    from africa_extension_agent import BUILD_ID
-    assert client(make_stub()).get("/status").json()["agentBuild"] == BUILD_ID
