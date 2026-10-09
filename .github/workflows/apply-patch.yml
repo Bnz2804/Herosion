@@ -14,6 +14,12 @@ jobs:
         run: |
           shopt -s nullglob
           for z in *.zip; do
+            echo "Found $z, $(stat -c%s "$z") bytes"
+            if ! unzip -tq "$z" >/dev/null 2>&1; then
+              echo "ERROR: $z is not a valid zip. A real zip starts with the bytes P K 003 004. This file starts with:"
+              head -c 16 "$z" | od -c | head -2
+              exit 1
+            fi
             rm -rf /tmp/p && mkdir /tmp/p
             unzip -oq "$z" -d /tmp/p
             cp -r /tmp/p/*/. .
