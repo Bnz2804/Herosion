@@ -11,4 +11,4 @@ DB_PATH = Path(os.environ.get("EXTENSION_AGENT_DB", Path.cwd() / "data" / "exten
 #   ollama:mistral-nemo            (open-weight, local, needs `ollama serve`)
 DEFAULT_MODEL = os.environ.get("EXTENSION_AGENT_MODEL", "mistral:mistral-large-latest")
 
-MAX_TOOL_CALLS = int(os.environ.get("EXTENSION_AGENT_MAX_TOOL_CALLS", "12"))
+MAX_TOOL_CALLS = int(os.environ.get("EXTENSION_AGENT_MAX_TOOL_CALLS", "40"))

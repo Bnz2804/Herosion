@@ -101,12 +101,12 @@ def _rain_glz002() -> dict[date, float | None]:
     return {d: round(rng.choice([0, 0, 0.2, 1.0]), 1) for d in _daterange(date(2026, 3, 1), date(2026, 3, 19))}
 
 
-def _forecast(cluster: str) -> list[tuple]:
+def _forecast(cluster: str, wet_from: date | None = None) -> list[tuple]:
     out = []
     for i in range(1, 15):
         d = AS_OF + timedelta(days=i)
         if cluster == "GLZ-001":
-            wet = d >= date(2026, 4, 18)
+            wet = d >= (wet_from or date(2026, 4, 18))
             mm, p = (round(12 + 2 * (d.day - 18), 1), 0.7) if wet else (0.0 if i % 2 else 1.0, 0.1 if i % 2 else 0.2)
         elif cluster == "ZGB-001":
             mm, p = (15.0, 0.8) if i % 2 else (5.0, 0.6)
@@ -121,7 +121,7 @@ H = {
     "GLZ-001": [
         ("001", "maize", "intermediate-OPV", 1.5, "loam", "good", 0, "not_planted", "2026-04-12", None, 1),
         ("002", "maize", "extra-early-OPV", 0.8, "sandy", "good", 0, "not_planted", "2026-04-14", None, 1),
-        ("003", "maize", "intermediate-OPV", 2.0, "clay", "moderate", 0, "not_planted", "2026-04-20", None, 1),
+        ("003", "maize", "intermediate-OPV", 2.0, "clay", "moderate", 0, "not_planted", "2026-04-24", None, 1),
         ("004", "maize", "intermediate-OPV", 1.0, "loam", "good", 1, "not_planted", "2026-04-11", None, 1),
         ("005", "maize", "intermediate-OPV", 1.2, "loam", "good", 0, "planted", None, "2026-04-03", 1),
         ("006", "maize", "hybrid-medium", 0.9, "sandy", "good", 0, "planted", None, "2026-04-05", 1),
@@ -263,19 +263,19 @@ def _seed_geo(conn: sqlite3.Connection) -> None:
 
     # weather grid: observed + forecast per cell
     stamp = now
-    def put(cell, series, fc_cluster):
+    def put(cell, series, fc_cluster, wet_from=None):
         for d, mm in series.items():
             if mm is not None:
                 conn.execute("INSERT OR REPLACE INTO weather_obs_grid VALUES (?,?,?,?,?)", (cell, d.isoformat(), mm, "synthetic-grid", stamp))
         if fc_cluster:
-            for (_c, d, mm, p, issued, _src) in _forecast(fc_cluster):
+            for (_c, d, mm, p, issued, _src) in _forecast(fc_cluster, wet_from):
                 conn.execute("INSERT OR REPLACE INTO weather_fc_grid VALUES (?,?,?,?,?,?,?)", (cell, d, mm, p, issued, "synthetic-grid-forecast", stamp))
     series = {"GLZ-001": _rain_glz001(), "GLZ-002": _rain_glz002(), "ZGB-001": _rain_zgb001(), "KAN-001": _rain_kan001()}
     cell_a = _cell(conn, 7.972, 2.235)
-    put(cell_a, series["GLZ-001"], "GLZ-001")
+    put(cell_a, series["GLZ-001"], "GLZ-001", date(2026, 4, 22))   # west: rain returns late (22 Apr)
     cell_b = _cell(conn, 7.971, 2.265)           # 5 km east: a local storm on 8-9 April reached this cell only
     sb = dict(series["GLZ-001"]); sb[date(2026, 4, 8)] = 24.0; sb[date(2026, 4, 9)] = 6.0; sb[date(2026, 4, 10)] = 0.0
-    put(cell_b, sb, "GLZ-001")
+    put(cell_b, sb, "GLZ-001", date(2026, 4, 16))                  # east: a local system brings rain on 16 Apr
     for cid in ("GLZ-002", "ZGB-001", "KAN-001"):
         put(_cell(conn, clusters[cid][0], clusters[cid][1]), series[cid], cid if cid != "GLZ-002" else None)
     for (pid, lat, lon) in conn.execute("SELECT plot_id, centroid_lat, centroid_lon FROM plots").fetchall():

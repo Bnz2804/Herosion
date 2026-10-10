@@ -44,8 +44,12 @@ Evidence rules (strict):
   asked about are `not_applicable`.
 - Compare observed rainfall and forecast against the crop's onset rule and maximum safe dry spell
   from the crop-calendar tool; do not rely on general knowledge of thresholds.
-- Compare each household's planned_planting_date with its cell's forecast first_wet_day. A household that already
-  plans to plant AFTER the rain returns does not need to delay; do not recommend delay_planting for it.
+- For the households you judge, call assess_planting_window with their plot_ids (one call can take them all). It is
+  computed in code: dry days AFTER the planned sowing date until rain returns, versus the crop's max safe dry spell.
+  Each result has a `rule_based_suggestion`; your recommendation for that household MUST equal it, and your
+  rationale must explain it with the numbers returned (projected_dry_days_after_sowing, max_safe_dry_spell_days,
+  forecast_first_wet_day, irrigation, notes). NEVER compare the already-observed dry spell with the safe limit:
+  the limit applies to dry days after sowing. Cite the assess call's audit_call_id.
 - Weather varies between ~5 km grid cells. Each household has a `plot` block with a `weather_cell_id`.
   For a question about specific households, call get_rainfall_evidence with plot_id (any plot in the cell)
   once per distinct weather_cell_id among the households you judge, and judge every household with ITS OWN
@@ -106,6 +110,7 @@ class RunState:
     rain: dict[str, dict] = field(default_factory=dict)   # audit_call_id -> numbers from a plot-level rainfall result
     as_of: str | None = None                                # dataset date reported by the tools
     agent_note: str | None = None                           # the model's own free-text conclusion (kept for the record, not shown)
+    assess: dict[str, dict] = field(default_factory=dict)  # household_id -> {call, suggestion, risk} from assess_planting_window
     cluster_wet: str | None = None                          # first forecast wet day from a cluster-level rainfall call
     onset_mm: float | None = None                           # crop onset rule from get_crop_context  # audit_call_id -> weather cell of plot-level rainfall calls
 
@@ -158,6 +163,15 @@ def build_agent(model: str | Model, session_id: str, db_path: str) -> Agent[RunS
                 continue
             if r.recommendation == "delay_planting" and h["planting_status"] == "planted":
                 problems.append(f"{r.household_id} is already planted; use already_planted_monitor")
+            if st.rain and r.recommendation != "not_applicable":      # plot-level mode: the code-computed assessment decides
+                a = st.assess.get(r.household_id)
+                if a is None:
+                    problems.append(f"{r.household_id}: call assess_planting_window with its plot_id before recommending")
+                elif r.recommendation != a["suggestion"]:
+                    problems.append(f"{r.household_id}: assess_planting_window says '{a['risk']}', so the recommendation must be "
+                                    f"'{a['suggestion']}', not '{r.recommendation}'")
+                elif a["call"] not in r.evidence_ids:
+                    problems.append(f"{r.household_id}: cite the assess_planting_window call {a['call']} in evidence_ids")
             # A household that already plans to plant AFTER the forecast rain returns has nothing to delay.
             if r.recommendation == "delay_planting" and h.get("planned_planting_date"):
                 cell = (h.get("plot") or {}).get("weather_cell_id")
@@ -254,6 +268,10 @@ async def run_agent(question: str, model: str | Model | None = None, db_path: st
                                     state.rain[cid] = {"cell": res["location"]["cell_id"], "dry": o["current_dry_spell_days"],
                                                        "last7": o["total_last_7d"]["mm"], "wet": res["forecast"]["first_wet_day"],
                                                        "max3": (o["max_3day_total"] or {}).get("mm")}
+                            for a in res.get("assessments") or []:
+                                if a.get("household_id"):
+                                    state.assess[a["household_id"]] = {"call": res.get("audit_call_id"),
+                                                                       "suggestion": a["rule_based_suggestion"], "risk": a["risk"]}
                             if (res.get("location") or {}).get("basis") == "cluster_series":
                                 state.cluster_wet = (res.get("forecast") or {}).get("first_wet_day")
                             if isinstance(res.get("relevant_season"), dict):

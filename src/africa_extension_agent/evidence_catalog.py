@@ -73,7 +73,12 @@ def plot_cells(conn: sqlite3.Connection, cluster_id: str) -> dict[str, str]:
             for h in tools.get_household_cluster(conn, cluster_id)["households"] if h["plot"]}
 
 
-def evidence_for_call(items: list[dict], tool: str, args: dict, cluster_id: str, cells: dict[str, str]) -> list[str]:
+def plot_crops(conn: sqlite3.Connection, cluster_id: str) -> dict[str, str]:
+    return {plot_id(h["household_id"]): h["crop"] for h in tools.get_household_cluster(conn, cluster_id)["households"]}
+
+
+def evidence_for_call(items: list[dict], tool: str, args: dict, cluster_id: str, cells: dict[str, str],
+                      crops: dict[str, str] | None = None) -> list[str]:
     """Evidence ids that a specific tool call actually backs (so citations can't over-reach)."""
     if tool == "get_household_cluster":
         return [i["evidenceId"] for i in items if i["kind"] == "plot"]
@@ -81,6 +86,17 @@ def evidence_for_call(items: list[dict], tool: str, args: dict, cluster_id: str,
         key = cells.get(args.get("plot_id") or "") or args.get("cluster_id") or cluster_id
         return [i["evidenceId"] for i in items if i["kind"] in ("rainfall", "forecast")
                 and i["evidenceId"].split(":")[1] == key]
+    if tool == "assess_planting_window":
+        pids = args.get("plot_ids") or []
+        keys = {cells.get(p) for p in pids if cells.get(p)}
+        crop_set = {(crops or {}).get(p) for p in pids}
+        out = []
+        for i in items:
+            parts = i["evidenceId"].split(":")
+            if (i["kind"] == "plot" and parts[1] in pids) or (i["kind"] in ("rainfall", "forecast") and parts[1] in keys) or \
+               (i["kind"] == "crop_calendar" and parts[2] in crop_set):
+                out.append(i["evidenceId"])
+        return out
     if tool == "get_crop_context":
         crop = args.get("crop")
         return [i["evidenceId"] for i in items if i["kind"] == "crop_calendar" and (not crop or f":{crop}:" in i["evidenceId"])]

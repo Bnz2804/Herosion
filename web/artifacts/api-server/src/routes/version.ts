@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { agentService } from "../agent/agentServiceClient";
 
 /** Which build is actually running? Open /api/version in the browser (behind the same login). */
-export const WEB_BUILD = "2026-10-08-e";
+export const WEB_BUILD = "2026-10-08-f";
 const router: IRouter = Router();
 
 router.get("/version", async (_req, res): Promise<void> => {
@@ -12,7 +12,7 @@ router.get("/version", async (_req, res): Promise<void> => {
   } catch {
     /* reported as unreachable */
   }
-  res.json({ web: WEB_BUILD, agent, expected: "2026-10-08-e for both" });
+  res.json({ web: WEB_BUILD, agent, expected: "2026-10-08-f for both" });
 });
 
 export default router;

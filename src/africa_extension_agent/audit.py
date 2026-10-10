@@ -28,6 +28,8 @@ def result_count(result: Any) -> int:
         return 0
     if "households" in result:
         return len(result["households"])
+    if "assessments" in result:
+        return len(result["assessments"])
     if "n_reports" in result:
         return result["n_reports"]
     if "observed" in result:

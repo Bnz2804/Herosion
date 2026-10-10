@@ -21,7 +21,7 @@ from pydantic_ai.models import Model
 import json
 import sqlite3 as _sqlite3
 
-from . import audit, config, plot_matching
+from . import BUILD_ID, audit, config, plot_matching
 from . import evidence_catalog as ec
 from .agent import run_agent
 from .db.connection import connect_readonly
@@ -83,7 +83,8 @@ def create_app(model_override: str | Model | None = None) -> FastAPI:
         m = model_info(current_model())
         return {"modelProvider": m["provider"], "modelName": m["name"], "modelConfigured": m["configured"],
                 "advisoryGenerationAvailable": m["configured"], "weatherProvider": "synthetic_fixture",
-                "weatherLive": False, "identityMode": "self_attested_prototype", "farmerDeliveryEnabled": False}
+                "weatherLive": False, "identityMode": "self_attested_prototype", "farmerDeliveryEnabled": False,
+                "agentBuild": BUILD_ID}
 
     @app.get("/clusters", dependencies=[Depends(guard)])
     def clusters():
@@ -177,10 +178,11 @@ def create_app(model_override: str | Model | None = None) -> FastAPI:
         c = conn()
         try:
             cells = ec.plot_cells(c, body.clusterId)
+            crops = ec.plot_crops(c, body.clusterId)
         finally:
             c.close()
         per_call = {r["call_id"]: ec.evidence_for_call(catalog, r["tool_name"], json.loads(r["arguments_json"]),
-                                                       body.clusterId, cells) for r in log}
+                                                       body.clusterId, cells, crops) for r in log}
         used = {e for ids in per_call.values() for e in ids}
         evidence_items = [i for i in catalog if i["evidenceId"] in used]
         by_id = {e["evidenceId"]: e for e in evidence_items}
@@ -194,7 +196,9 @@ def create_app(model_override: str | Model | None = None) -> FastAPI:
                 for e in per_call.get(cid, []):
                     if not e.startswith("plot:") or e == f"plot:{pid}":
                         ids.append(e)
-            # a household's own weather: only its cell (plot-level call) or the cluster series (cluster-level call)
+            own_cell = cells.get(pid)   # a household's own weather: drop other cells' items pulled in by multi-plot calls
+            other = set(cells.values()) - {own_cell}
+            ids = [e for e in ids if not (e.split(":")[0] in ("rainfall", "forecast") and e.split(":")[1] in other)]
             recs.append({"householdId": r.household_id, "plotId": pid, "crop": h.get("crop"),
                          "recommendation": r.recommendation, "rationale": r.rationale,
                          "evidenceIds": [i for i in dict.fromkeys(ids) if i in by_id],

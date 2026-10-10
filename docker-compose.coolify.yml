@@ -26,6 +26,7 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set a long random token}
       SEED_SYNTHETIC: ${SEED_SYNTHETIC:-true}
+      FORCE_RESEED: ${FORCE_RESEED:-false}
       EXTENSION_AGENT_PSEUDONYM_SALT: ${PSEUDONYM_SALT:-change-me}
     volumes:
       - agentdata:/data

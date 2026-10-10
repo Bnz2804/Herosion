@@ -42,3 +42,16 @@ Both print a quality report (rejected rows with reasons). Owner names/phones are
 - Backups: Coolify scheduled backup for Postgres; the SQLite volume `agentdata` (`/data`) holds the evidence, plot matches and tool audit log; back it up too.
 - Redeploy on push: enable Coolify's auto-deploy for the branch.
 - Schema changes: `web` runs a non-destructive `drizzle push` on start; if a change would lose data it stops and logs why instead of applying it.
+
+## 7. Login troubleshooting
+On start the `web` log prints `Login enabled for user '<name>' (password length N)`. Every refused login logs
+`login refused` with a reason (no header yet, wrong user, wrong password with the lengths). Quotes or spaces around
+`APP_BASIC_AUTH` are tolerated; a value without `username:` makes `web` refuse to start with an explanatory error.
+
+## 8. Refreshing the demo data after an update
+The database is created once and then kept (so your audit log and matches survive redeploys). When a patch changes the
+synthetic scenario (build f changed the GLZ-001 forecasts), refresh it once:
+1. In Coolify add the variable `FORCE_RESEED` = `true`, redeploy, and wait for **Healthy**.
+2. **Remove `FORCE_RESEED` (or set it to `false`) and redeploy again**, or every restart wipes the database.
+This replaces ALL data in the SQLite volume with fresh SYNTHETIC data (including the tool audit log and any plot matches).
+Never use it once real data is loaded.

@@ -92,6 +92,21 @@ def get_pest_reports(
                                                          since_days=since_days, as_of=as_of)
 
 
+@mcp.tool(annotations=READ_ONLY)
+def assess_planting_window(
+    plot_ids: Annotated[list[str], Field(description="Plot ids (from get_household_cluster) to assess, up to 50 per call", min_length=1, max_length=50)],
+    as_of: Annotated[str | None, Field(description="ISO date; defaults to the dataset reference date")] = None,
+) -> dict[str, Any]:
+    """DETERMINISTIC planting-risk check for each plot, computed in code (do not re-derive it). For each plot it
+    joins the household's plan (planted? planned date? irrigation), the crop's rule (max safe dry spell after
+    sowing, planting window) and the forecast of the plot's own weather cell, and returns the projected dry days
+    AFTER sowing, a `risk` and a `rule_based_suggestion` (delay_planting / proceed_with_planting /
+    already_planted_monitor / insufficient_evidence). Your recommendation for each household must follow its
+    suggestion; explain it using the numbers returned."""
+    return audited("assess_planting_window")(
+        lambda **kw: _run(tools.assess_planting_window, **kw))(plot_ids=plot_ids, as_of=as_of)
+
+
 def main() -> None:
     mcp.run(transport="stdio")
 

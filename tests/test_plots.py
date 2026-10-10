@@ -192,9 +192,17 @@ def test_delay_rejected_when_planned_date_is_after_the_rain_returns(db):
     assert rec == "proceed_with_planting"
 
 
-def test_delay_still_allowed_when_planting_before_or_on_the_rain_return(db):
-    assert _run_target(db, "HH-GLZ001-001")[0] == "delay_planting"          # plans 04-12, rain 04-18
-    assert _run_target(db, "HH-GLZ001-012")[0] == "delay_planting"          # plans 04-18 = rain return day: judgment call, allowed
+def test_recommendations_follow_the_code_computed_assessment(db):
+    assert _run_target(db, "HH-GLZ001-001")[0] == "delay_planting"          # west cell: 10 dry days after sowing > 7
+    assert _run_target(db, "HH-GLZ001-009")[0] == "proceed_with_planting"   # east cell: 3 dry days after sowing
+    assert _run_target(db, "HH-GLZ001-012")[0] == "proceed_with_planting"   # plans to sow after the rain returns
+
+
+def test_validator_forces_the_agent_to_call_the_assessment_first(db):
+    from africa_extension_agent import audit
+    rec, session = _run_target(db, "HH-GLZ001-001", skip_assess_first=True)
+    assert rec == "delay_planting"
+    assert [r["tool_name"] for r in audit.read_log(session)].count("assess_planting_window") == 1   # called after the pushback
 
 
 def test_conclusion_is_generated_from_the_validated_table_and_cannot_contradict_it(db):

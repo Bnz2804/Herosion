@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 chown -R app /data                      # named volumes start root-owned
+if [ "${FORCE_RESEED:-false}" = "true" ] && [ -f "$EXTENSION_AGENT_DB" ]; then
+  echo "FORCE_RESEED=true: replacing the database with fresh SYNTHETIC data (remove this variable afterwards)."
+  rm -f "$EXTENSION_AGENT_DB" "$EXTENSION_AGENT_DB-wal" "$EXTENSION_AGENT_DB-shm"
+fi
 if [ ! -f "$EXTENSION_AGENT_DB" ]; then
   if [ "${SEED_SYNTHETIC:-true}" = "true" ]; then
     echo "No database found: seeding SYNTHETIC demo data."
