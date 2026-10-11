@@ -41,7 +41,7 @@ def test_mcp_roundtrip_and_audit(db, monkeypatch):
         async with Client(StdioTransport(sys.executable, ["-m", "africa_extension_agent.mcp_server"], env=env)) as c:
             names = {x.name for x in await c.list_tools()}
             assert names == {"get_household_cluster", "get_rainfall_evidence", "get_crop_context", "get_pest_reports", "assess_planting_window"}
-            r = await c.call_tool("get_crop_context", {"crop": "maize", "cluster_id": "GLZ-001"})
+            r = await c.call_tool("get_crop_context", {"crop": "maize", "cluster_id": "GLZ-001", "why": "test call"})
             return r.data["audit_call_id"]
     cid = asyncio.run(go())
     rows = audit.read_log("sess-t")

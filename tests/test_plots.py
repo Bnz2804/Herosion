@@ -223,3 +223,23 @@ def test_run_returns_generated_conclusion_and_keeps_the_agent_note(db):
                                                db_path=str(db), emit=lambda k, x: None))
     assert out.conclusion.startswith("Dataset date 2026-04-10.") and "HH-GLZ001-001" in out.conclusion
     assert state.agent_note == "Plot-level check."
+
+
+def test_every_tool_call_logs_the_agents_reason_and_the_service_shows_it(db):
+    import json
+    from fastapi.testclient import TestClient
+    from africa_extension_agent import audit
+    from africa_extension_agent.service import create_app
+    run = TestClient(create_app(model_override=make_plot_stub())).post(
+        "/runs", json={"clusterId": "GLZ-001", "question": "Should HH-GLZ001-001 delay planting?"}).json()
+    assert all(t["decision"] == "stand-in model step" for t in run["toolCalls"])
+    assert all("why" not in t["arguments"] for t in run["toolCalls"])          # shown separately, not as a tool argument
+    assert all(json.loads(r["arguments_json"]).get("why") for r in audit.read_log(run["agentSessionId"]))
+
+
+def test_gaps_line_has_no_double_punctuation_and_seed_blocker_is_reported(db):
+    from africa_extension_agent.agent import ExtensionAdvice, RunState, build_conclusion
+    adv = ExtensionAdvice(conclusion="x", household_recommendations=[], data_gaps=["a gap.", "another."])
+    assert "Gaps: a gap; another." in build_conclusion(adv, RunState())
+    a = t.assess_planting_window(connect_readonly(db), ["PL-GLZ001-011"])["assessments"][0]
+    assert any("seed is not in hand" in n for n in a["notes"])

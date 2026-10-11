@@ -63,16 +63,17 @@ def audited(tool_name: str):
     def deco(fn: Callable[..., dict]):
         @functools.wraps(fn)
         def wrapper(**kwargs):
+            why = kwargs.pop("why", None)          # the agent's stated reason: logged, never passed to the domain function
             call_id = "call-" + uuid.uuid4().hex[:10]
             session = os.environ.get(SESSION_ENV) or "unscoped-" + uuid.uuid4().hex[:8]
             t0 = time.perf_counter()
             try:
                 result = fn(**kwargs)
             except Exception as exc:  # log then surface to the caller
-                record(call_id=call_id, session_id=session, tool=tool_name, arguments=kwargs, status="error",
+                record(call_id=call_id, session_id=session, tool=tool_name, arguments={**kwargs, "why": why}, status="error",
                        duration_ms=int((time.perf_counter() - t0) * 1000), error=f"{type(exc).__name__}: {exc}")
                 raise
-            record(call_id=call_id, session_id=session, tool=tool_name, arguments=kwargs, status="ok",
+            record(call_id=call_id, session_id=session, tool=tool_name, arguments={**kwargs, "why": why}, status="ok",
                    duration_ms=int((time.perf_counter() - t0) * 1000), result=result)
             return {**result, "audit_call_id": call_id}
         return wrapper

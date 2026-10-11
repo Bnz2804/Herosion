@@ -106,6 +106,8 @@ def _assess_one(conn: sqlite3.Connection, pid: str, today: date, as_of: str | No
         risk = "exceeds_safe_limit" if lower > max_safe else "unknown_beyond_forecast"
     if risk == "exceeds_safe_limit" and h["has_irrigation"]:
         risk = "irrigated_mitigated"
+    if h["seed_in_hand"] == 0:
+        out["notes"].append("seed is not in hand; planting cannot start until seed is obtained")
     if d["location_confidence"] in ("low", "very_low"):
         out["notes"].append(f"weather is for an approximate location ({d['location_confidence']} confidence)")
     return done(risk)

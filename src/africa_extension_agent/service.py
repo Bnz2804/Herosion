@@ -170,10 +170,14 @@ def create_app(model_override: str | Model | None = None) -> FastAPI:
 
         log = audit.read_log(session)
         tool_by_call = {r["call_id"]: r["tool_name"] for r in log}
+        def _args(r):
+            a = json.loads(r["arguments_json"])
+            return {k: v for k, v in a.items() if k != "why"}, a.get("why")
         tool_calls = [{
             "toolName": r["tool_name"], "status": "success" if r["status"] == "ok" else "error",
-            "resultCount": r["result_count"] or 0, "arguments": r["arguments_json"], "auditCallId": r["call_id"],
-            "summary": r["result_summary"], "decision": decisions[i] if len(decisions) == len(log) else None,
+            "resultCount": r["result_count"] or 0, "arguments": json.dumps(_args(r)[0], sort_keys=True), "auditCallId": r["call_id"],
+            "summary": r["result_summary"],
+            "decision": _args(r)[1] or (decisions[i] if len(decisions) == len(log) else None),
         } for i, r in enumerate(log)]
         c = conn()
         try:

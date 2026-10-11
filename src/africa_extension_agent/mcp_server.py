@@ -33,6 +33,7 @@ def _run(fn, **kwargs) -> dict[str, Any]:
 @mcp.tool(annotations=READ_ONLY)
 def get_household_cluster(
     cluster_id: Annotated[str, Field(description="Cluster code, e.g. 'GLZ-001'")],
+    why: Annotated[str, Field(description="One short sentence: what you just learned and why you are calling this tool. Saved in the audit log.", min_length=5, max_length=300)],
     crop: Annotated[str | None, Field(description="Filter by crop, e.g. 'maize'")] = None,
     planting_status: Annotated[str | None, Field(description="'planted' or 'not_planted'")] = None,
 ) -> dict[str, Any]:
@@ -41,12 +42,13 @@ def get_household_cluster(
     location confidence/precision, mapped-vs-declared area check, weather_cell_id). Unknown fields are listed in
     `missing_fields`. No owner names. Contains NO weather, calendar or pest information."""
     return audited("get_household_cluster")(
-        lambda **kw: _run(tools.get_household_cluster, **kw))(cluster_id=cluster_id, crop=crop,
+        lambda **kw: _run(tools.get_household_cluster, **kw))(cluster_id=cluster_id, why=why, crop=crop,
                                                               planting_status=planting_status)
 
 
 @mcp.tool(annotations=READ_ONLY)
 def get_rainfall_evidence(
+    why: Annotated[str, Field(description="One short sentence: what you just learned and why you are calling this tool. Saved in the audit log.", min_length=5, max_length=300)],
     plot_id: Annotated[str | None, Field(description="Plot id from get_household_cluster (e.g. 'PL-GLZ001-001'). Preferred: "
                                          "returns rain for the ~5 km grid cell containing that plot.")] = None,
     cluster_id: Annotated[str | None, Field(description="Cluster code. Only used when no plot_id is given "
@@ -62,25 +64,27 @@ def get_rainfall_evidence(
     means for any crop."""
     return audited("get_rainfall_evidence")(
         lambda **kw: _run(tools.get_rainfall_evidence, **kw))(
-        cluster_id=cluster_id, plot_id=plot_id, as_of=as_of, lookback_days=lookback_days, forecast_days=forecast_days)
+        cluster_id=cluster_id, why=why, plot_id=plot_id, as_of=as_of, lookback_days=lookback_days, forecast_days=forecast_days)
 
 
 @mcp.tool(annotations=READ_ONLY)
 def get_crop_context(
     crop: Annotated[str, Field(description="Crop name, e.g. 'maize'")],
     cluster_id: Annotated[str, Field(description="Cluster code; used to look up its agro-ecological zone")],
+    why: Annotated[str, Field(description="One short sentence: what you just learned and why you are calling this tool. Saved in the audit log.", min_length=5, max_length=300)],
     as_of: Annotated[str | None, Field(description="ISO date; defaults to the dataset reference date")] = None,
 ) -> dict[str, Any]:
     """Agronomic rules for a crop in the cluster's agro-ecological zone: planting-window dates and whether
     today is inside/before/after it, the rainfall onset rule, the maximum safe dry spell after sowing,
     the establishment period, and variety maturity/drought tolerance. Contains NO observed weather."""
     return audited("get_crop_context")(
-        lambda **kw: _run(tools.get_crop_context, **kw))(crop=crop, cluster_id=cluster_id, as_of=as_of)
+        lambda **kw: _run(tools.get_crop_context, **kw))(crop=crop, cluster_id=cluster_id, why=why, as_of=as_of)
 
 
 @mcp.tool(annotations=READ_ONLY)
 def get_pest_reports(
     cluster_id: Annotated[str, Field(description="Cluster code, e.g. 'GLZ-001'")],
+    why: Annotated[str, Field(description="One short sentence: what you just learned and why you are calling this tool. Saved in the audit log.", min_length=5, max_length=300)],
     crop: Annotated[str | None, Field(description="Filter by crop")] = None,
     since_days: Annotated[int, Field(description="How many days back to look (1-180)")] = 30,
     as_of: Annotated[str | None, Field(description="ISO date; defaults to the dataset reference date")] = None,
@@ -88,12 +92,13 @@ def get_pest_reports(
     """Recent scout pest reports for a cluster, aggregated by pest (incidence %, trend, sample-size
     caveat). No reports means no data, not absence of pests."""
     return audited("get_pest_reports")(
-        lambda **kw: _run(tools.get_pest_reports, **kw))(cluster_id=cluster_id, crop=crop,
+        lambda **kw: _run(tools.get_pest_reports, **kw))(cluster_id=cluster_id, why=why, crop=crop,
                                                          since_days=since_days, as_of=as_of)
 
 
 @mcp.tool(annotations=READ_ONLY)
 def assess_planting_window(
+    why: Annotated[str, Field(description="One short sentence: what you just learned and why you are calling this tool. Saved in the audit log.", min_length=5, max_length=300)],
     plot_ids: Annotated[list[str], Field(description="Plot ids (from get_household_cluster) to assess, up to 50 per call", min_length=1, max_length=50)],
     as_of: Annotated[str | None, Field(description="ISO date; defaults to the dataset reference date")] = None,
 ) -> dict[str, Any]:
@@ -104,7 +109,7 @@ def assess_planting_window(
     already_planted_monitor / insufficient_evidence). Your recommendation for each household must follow its
     suggestion; explain it using the numbers returned."""
     return audited("assess_planting_window")(
-        lambda **kw: _run(tools.assess_planting_window, **kw))(plot_ids=plot_ids, as_of=as_of)
+        lambda **kw: _run(tools.assess_planting_window, **kw))(plot_ids=plot_ids, why=why, as_of=as_of)
 
 
 def main() -> None:

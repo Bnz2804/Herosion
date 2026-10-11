@@ -5,6 +5,7 @@ chooses which to call, reads each result, and decides what to do next.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import uuid
@@ -29,8 +30,8 @@ YOU decide which tools are relevant to the question, in what order, and when you
 Call a tool only if its result could change an answer. Reuse earlier results; do not repeat a call
 with the same arguments.
 
-BEFORE EVERY TOOL CALL, write one short sentence beginning "Decision:" saying what you just learned
-(or what is missing) and why you are calling that tool next.
+EVERY tool call must include the `why` argument: one short sentence saying what you just learned (or what is
+missing) and why you are calling that tool next. It is saved in the audit log and shown to the officer.
 
 Evidence rules (strict):
 - Use only values that appear in tool results. Never invent rainfall, dates, households, rules or pest data.
@@ -139,7 +140,7 @@ def build_conclusion(out: ExtensionAdvice, state: "RunState") -> str:
         onset = {True: "onset rule met in the lookback window", False: "onset rule not met", None: "onset rule not assessed"}[f.onset_rule_met_in_window]
         lines.append(f"Weather cell {f.cell_id}: {dry}; {rain}; {wet}; {onset}.")
     if out.data_gaps:
-        lines.append("Gaps: " + "; ".join(out.data_gaps) + ".")
+        lines.append("Gaps: " + "; ".join(g.strip().rstrip(".") for g in out.data_gaps) + ".")
     return " ".join(x for x in lines if x)
 
 
@@ -244,8 +245,16 @@ async def run_agent(question: str, model: str | Model | None = None, db_path: st
             parts = node.model_response.parts
             texts = [p.content.strip() for p in parts if p.part_kind == "text" and p.content.strip()]
             calls = [p for p in parts if p.part_kind == "tool-call" and not p.tool_name.startswith("final_result")]
+            whys = []
+            for c in calls:
+                try:
+                    whys.append(str(json.loads(c.args_as_json_str()).get("why") or "").strip())
+                except Exception:
+                    whys.append("")
             if texts:
                 emit("decision", " ".join(texts))
+            elif any(whys):
+                emit("decision", " | ".join(w for w in whys if w))
             elif calls:
                 emit("decision", "(model gave no stated rationale for this step)")
             for c in calls:

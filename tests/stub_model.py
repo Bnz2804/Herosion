@@ -65,19 +65,19 @@ def make_stub(bad_household_first: bool = False) -> FunctionModel:
         cluster = re.search(r"[A-Z]{3}-\d{3}", _prompt(messages)).group(0)
         if "get_household_cluster" not in res:
             return ModelResponse(parts=[TextPart("Decision: I need to know which households exist first."),
-                                        ToolCallPart("get_household_cluster", {"cluster_id": cluster, "crop": "maize"})])
+                                        ToolCallPart("get_household_cluster", {"why": "stand-in model step", "cluster_id": cluster, "crop": "maize"})])
         if "get_rainfall_evidence" not in res:
             return ModelResponse(parts=[TextPart("Decision: households known; whether to delay depends on rain, so check rainfall."),
-                                        ToolCallPart("get_rainfall_evidence", {"cluster_id": cluster})])
+                                        ToolCallPart("get_rainfall_evidence", {"why": "stand-in model step", "cluster_id": cluster})])
         if res["get_rainfall_evidence"]["evidence_sufficiency"] == "insufficient":
             return _final(info, res)  # nothing more can be established -> stop
         if "get_crop_context" not in res:
             return ModelResponse(parts=[TextPart("Decision: rain evidence usable; I need the maize onset/dry-spell rules to interpret it."),
-                                        ToolCallPart("get_crop_context", {"crop": "maize", "cluster_id": cluster})])
+                                        ToolCallPart("get_crop_context", {"why": "stand-in model step", "crop": "maize", "cluster_id": cluster})])
         hh = res["get_household_cluster"]["households"]
         if any(h["planting_status"] == "planted" for h in hh) and "get_pest_reports" not in res:
             return ModelResponse(parts=[TextPart("Decision: some maize is already planted; check pest pressure on seedlings."),
-                                        ToolCallPart("get_pest_reports", {"cluster_id": cluster, "crop": "maize"})])
+                                        ToolCallPart("get_pest_reports", {"why": "stand-in model step", "cluster_id": cluster, "crop": "maize"})])
         if bad_household_first and not state["sent_bad"]:
             state["sent_bad"] = True
             return _final(info, res, bad_household=True)
@@ -103,23 +103,23 @@ def make_plot_stub(wrong_cell_first: bool = False, wrong_facts_first: bool = Fal
         names = [n for n, _ in calls]
         if "get_household_cluster" not in names:
             return ModelResponse(parts=[TextPart("Decision: list households and their plots first."),
-                                        ToolCallPart("get_household_cluster", {"cluster_id": "GLZ-001", "crop": "maize"})])
+                                        ToolCallPart("get_household_cluster", {"why": "stand-in model step", "cluster_id": "GLZ-001", "crop": "maize"})])
         rain = {c["location"]["cell_id"]: c for n, c in calls if n == "get_rainfall_evidence"}
         hh = next(c for n, c in calls if n == "get_household_cluster")
         mine = next(h for h in hh["households"] if h["household_id"] == target)
         want = other if (wrong_cell_first and not retried) else f"PL-{target[3:]}"
         if want == other and not rain:
             return ModelResponse(parts=[TextPart("Decision: check rainfall for a plot."),
-                                        ToolCallPart("get_rainfall_evidence", {"plot_id": other})])
+                                        ToolCallPart("get_rainfall_evidence", {"why": "stand-in model step", "plot_id": other})])
         if want != other and mine["plot"]["weather_cell_id"] not in rain:
             return ModelResponse(parts=[TextPart("Decision: need the rainfall for this household's own cell."),
-                                        ToolCallPart("get_rainfall_evidence", {"plot_id": want})])
+                                        ToolCallPart("get_rainfall_evidence", {"why": "stand-in model step", "plot_id": want})])
         if "get_crop_context" not in names:
-            return ModelResponse(parts=[ToolCallPart("get_crop_context", {"crop": "maize", "cluster_id": "GLZ-001"})])
+            return ModelResponse(parts=[ToolCallPart("get_crop_context", {"why": "stand-in model step", "crop": "maize", "cluster_id": "GLZ-001"})])
         skipping = skip_assess_first and not retried
         if "assess_planting_window" not in names and not skipping:
             return ModelResponse(parts=[TextPart("Decision: compute the planting risk in code."),
-                                        ToolCallPart("assess_planting_window", {"plot_ids": [f"PL-{target[3:]}"]})])
+                                        ToolCallPart("assess_planting_window", {"why": "stand-in model step", "plot_ids": [f"PL-{target[3:]}"]})])
         used = next(iter(rain.values())) if want == other else rain[mine["plot"]["weather_cell_id"]]
         assess = next((c for n, c in calls if n == "assess_planting_window"), None)
         suggestion = assess["assessments"][0]["rule_based_suggestion"] if assess else "delay_planting"
