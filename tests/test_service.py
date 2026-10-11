@@ -72,3 +72,10 @@ def test_crop_specific_evidence_only_for_matching_crop(db):
         for eid in rec["evidenceIds"]:
             assert by_id[eid].get("crop") in (None, rec["crop"])
     assert not any("cassava" in i or "cowpea" in i for r in run["householdRecommendations"] for i in r["evidenceIds"])
+
+
+def test_status_reports_build_id(db):
+    from africa_extension_agent import BUILD_ID
+    st = client(make_stub()).get("/status").json()
+    assert st["agentBuild"] == BUILD_ID
+    assert st["datasetDate"] == "2026-04-10" and st["datasetIsSynthetic"] is True     # the demo date is labelled, never passed off as today

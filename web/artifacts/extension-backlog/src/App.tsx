@@ -103,12 +103,13 @@ function SectionHeading({ eyebrow, title, description, action }: { eyebrow: stri
   return <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="font-data text-[10px] uppercase tracking-[.18em] text-[#8c7041]">{eyebrow}</p><h1 className="mt-2 font-display text-[34px] leading-[1.05] tracking-[-.025em] sm:text-[42px]">{title}</h1>{description && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>}</div>{action}</div>;
 }
 
-function AgentNotice({ status }: { status?: { modelConfigured: boolean; modelName?: string | null; agentServiceReachable: boolean; advisoryGenerationAvailable: boolean; weatherLive: boolean; identityMode: string; farmerDeliveryEnabled: boolean } }) {
+function AgentNotice({ status }: { status?: { datasetDate?: string | null; datasetIsSynthetic?: boolean | null; modelConfigured: boolean; modelName?: string | null; agentServiceReachable: boolean; advisoryGenerationAvailable: boolean; weatherLive: boolean; identityMode: string; farmerDeliveryEnabled: boolean } }) {
   return <section className="mb-6 overflow-hidden rounded-xl border border-[#cbbd9c] bg-[#f0e8d3]/80">
     <div className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex gap-3"><div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#e1d2ad] text-[#6e592f]"><ShieldCheck size={17} /></div><div><p className="text-sm font-bold">Human control is active</p><p className="mt-1 max-w-2xl text-xs leading-relaxed text-[#655d4b]">The agent only drafts, and only from tool results. Every draft needs approval by a different named officer. No farmer delivery is available.</p></div></div>
-      <div className="grid grid-cols-2 gap-x-5 gap-y-2 border-t border-[#d7c9a9] pt-3 text-[10px] sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+      <div className="grid grid-cols-2 gap-x-5 gap-y-2 border-t border-[#d7c9a9] pt-3 text-[10px] sm:grid-cols-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
         <Capability label="Model" value={status?.modelConfigured ? `Configured · ${status.modelName ?? 'unnamed'}` : status && !status.agentServiceReachable ? 'Agent service offline' : 'Not configured'} active={!!status?.modelConfigured} />
+        <Capability label="Data date" value={status?.datasetDate ? `${status.datasetDate}${status.datasetIsSynthetic ? ' · synthetic' : ''}` : 'Unknown'} active={false} />
         <Capability label="Live weather" value={status?.weatherLive ? 'Connected' : 'Unavailable'} active={!!status?.weatherLive} />
         <Capability label="Identity" value={status?.identityMode === 'self_attested_prototype' ? 'Self-attested' : status?.identityMode || 'Unknown'} active={false} />
         <Capability label="Delivery" value={status?.farmerDeliveryEnabled ? 'Enabled' : 'Disabled'} active={!!status?.farmerDeliveryEnabled} />

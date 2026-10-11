@@ -497,6 +497,8 @@ components:
       required: [modelProvider, modelConfigured, advisoryGenerationAvailable, weatherProvider, weatherLive, identityMode, farmerDeliveryEnabled, agentServiceReachable]
       properties:
         agentServiceReachable: { type: boolean }
+        datasetDate: { type: [string, "null"], description: "The 'as of' date the evidence tools use (a demo date is NOT today)" }
+        datasetIsSynthetic: { type: [boolean, "null"] }
         modelName: { type: [string, "null"] }
         modelProvider: { type: string }
         modelConfigured: { type: boolean }

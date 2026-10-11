@@ -78,13 +78,27 @@ def create_app(model_override: str | Model | None = None) -> FastAPI:
     def healthz():
         return {"status": "ok"}
 
+    def dataset_info() -> dict[str, Any]:
+        """The 'as of' date the tools use and whether the data is synthetic: shown in the UI so a demo date is never mistaken for today."""
+        try:
+            c = connect_readonly()
+            try:
+                from .tools._util import as_of_date
+                prov = c.execute("SELECT value FROM meta WHERE key='data_provenance'").fetchone()
+                return {"datasetDate": as_of_date(c, None).isoformat(),
+                        "datasetIsSynthetic": bool(prov and str(prov["value"]).upper().startswith("SYNTHETIC"))}
+            finally:
+                c.close()
+        except Exception:
+            return {"datasetDate": None, "datasetIsSynthetic": None}
+
     @app.get("/status", dependencies=[Depends(guard)])
     def status():
         m = model_info(current_model())
         return {"modelProvider": m["provider"], "modelName": m["name"], "modelConfigured": m["configured"],
                 "advisoryGenerationAvailable": m["configured"], "weatherProvider": "synthetic_fixture",
                 "weatherLive": False, "identityMode": "self_attested_prototype", "farmerDeliveryEnabled": False,
-                "agentBuild": BUILD_ID}
+                "agentBuild": BUILD_ID, **dataset_info()}
 
     @app.get("/clusters", dependencies=[Depends(guard)])
     def clusters():

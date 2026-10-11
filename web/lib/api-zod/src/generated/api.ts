@@ -109,6 +109,8 @@ export const GetClusterEvidenceResponse = zod.object({
  */
 export const GetAgentStatusResponse = zod.object({
   "agentServiceReachable": zod.boolean(),
+  "datasetDate": zod.string().nullish().describe('The \'as of\' date the evidence tools use (a demo date is NOT today)'),
+  "datasetIsSynthetic": zod.boolean().nullish(),
   "modelName": zod.string().nullish(),
   "modelProvider": zod.string(),
   "modelConfigured": zod.boolean(),

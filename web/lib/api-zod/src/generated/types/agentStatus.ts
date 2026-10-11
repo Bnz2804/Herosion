@@ -10,6 +10,13 @@ import type { AgentStatusWeatherProvider } from './agentStatusWeatherProvider';
 
 export interface AgentStatus {
   agentServiceReachable: boolean;
+  /**
+     * The 'as of' date the evidence tools use (a demo date is NOT today)
+     * @nullable
+     */
+  datasetDate?: string | null;
+  /** @nullable */
+  datasetIsSynthetic?: boolean | null;
   /** @nullable */
   modelName?: string | null;
   modelProvider: string;
