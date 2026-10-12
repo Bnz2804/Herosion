@@ -13,7 +13,8 @@ import {
   useGetAuditEvents, useGetClusterEvidence, useGetClusterPlots, useGetClusters,
   useGetOverview, useHealthCheck, useSubmitAgentDrafts, useGetPlotFieldCandidates, useMatchPlotField, getGetPlotFieldCandidatesQueryKey,
 } from '@workspace/api-client-react';
-import type { Advisory, EvidenceItem, EvidenceRun, Plot, FieldCandidate } from '@workspace/api-client-react';
+import type { Advisory, EvidenceItem, EvidenceRun, Plot } from '@workspace/api-client-react';
+import { FieldMap } from './components/FieldMap';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -173,23 +174,6 @@ function PlotCards({ plots, onConfirm }: { plots: Plot[]; onConfirm: (plotId: st
       {!protectedPlot && <button type="button" onClick={() => onConfirm(plot.plotId)} className="mt-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#315840] px-3 text-xs font-semibold text-[#315840] active:bg-[#dce9df]" data-testid={`button-confirm-field-${plot.plotId}`}><MapPin size={14} />{plot.verificationLevel === 'satellite_candidate' ? 'Confirm this field' : plot.locationPrecision === 'polygon' ? 'Re-check field boundary' : 'Find and confirm this field'}</button>}
     </li>;
   })}</ul>;
-}
-
-function FieldMap({ origin, current, candidates, selected, onSelect }: { origin: { lat: number; lon: number }; current?: Plot['geometry']; candidates: FieldCandidate[]; selected: string | null; onSelect: (id: string) => void }) {
-  const kx = Math.cos(origin.lat * Math.PI / 180);
-  const ring = (g: unknown): [number, number][] => { const c = (g as { coordinates?: number[][][] } | null)?.coordinates?.[0] ?? []; return c.map(([lon, lat]) => [lon * kx, -lat] as [number, number]); };
-  const rings = candidates.map(c => ({ c, pts: ring(c.geometry) }));
-  const cur = current ? ring(current) : [];
-  const all = [...rings.flatMap(r => r.pts), ...cur, [origin.lon * kx, -origin.lat] as [number, number]];
-  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
-  const pad = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.12 || 0.0005;
-  const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad, w = Math.max(...xs) - Math.min(...xs) + 2 * pad, h = Math.max(...ys) - Math.min(...ys) + 2 * pad;
-  const pts = (p: [number, number][]) => p.map(([x, y]) => `${x},${y}`).join(' ');
-  return <svg viewBox={`${x0} ${y0} ${w} ${h}`} className="h-56 w-full rounded-lg border border-border bg-[#eef1e6]" role="img" aria-label="Candidate fields around the plot. Tap a field to select it." preserveAspectRatio="xMidYMid meet">
-    {cur.length > 0 && <polygon points={pts(cur)} fill="none" stroke="#765a22" strokeWidth={w / 160} strokeDasharray={`${w / 60} ${w / 80}`} />}
-    {rings.map(({ c, pts: p }, i) => <g key={c.candidateId} onClick={() => onSelect(c.candidateId)} className="cursor-pointer"><polygon points={pts(p)} fill={selected === c.candidateId ? '#315840' : '#d9b36a'} fillOpacity={selected === c.candidateId ? 0.75 : 0.5} stroke={selected === c.candidateId ? '#1d3a28' : '#765a22'} strokeWidth={w / 200} /><text x={p.reduce((a, q) => a + q[0], 0) / p.length} y={p.reduce((a, q) => a + q[1], 0) / p.length} fontSize={w / 22} textAnchor="middle" dominantBaseline="middle" fill="#1d1d1d" style={{ pointerEvents: 'none' }}>{i + 1}</text></g>)}
-    <circle cx={origin.lon * kx} cy={-origin.lat} r={w / 70} fill="#a85143" stroke="#fff" strokeWidth={w / 400} />
-  </svg>;
 }
 
 function FieldMatchSheet({ plotId, current, onClose, onDone }: { plotId: string; current?: Plot['geometry']; onClose: () => void; onDone: () => void }) {
