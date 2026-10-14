@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { agentService } from "../agent/agentServiceClient";
 
 /** Which build is actually running? Open /api/version in the browser (behind the same login). */
-export const WEB_BUILD = "2026-10-08-i";
+export const WEB_BUILD = "2026-10-08-j";
 const router: IRouter = Router();
 
 router.get("/version", async (_req, res): Promise<void> => {

@@ -22,13 +22,20 @@ export function FieldMap({ origin, current, candidates, selected, onSelect }: {
   const ys = all.map(p => p[1]);
   const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 60);
   const pad = span * 0.12;
-  const x0 = Math.min(...xs) - pad;
-  const y0 = Math.min(...ys) - pad;
-  const w = Math.max(...xs) - Math.min(...xs) + 2 * pad;
-  const h = Math.max(...ys) - Math.min(...ys) + 2 * pad;
+  let x0 = Math.min(...xs) - pad;
+  let y0 = Math.min(...ys) - pad;
+  let w = Math.max(...xs) - Math.min(...xs) + 2 * pad;
+  let h = Math.max(...ys) - Math.min(...ys) + 2 * pad;
+  const ASPECT = 1.55;                                   // about the panel's width : height on a phone
+  if (w / h < ASPECT) { const nw = h * ASPECT; x0 -= (nw - w) / 2; w = nw; } else { const nh = w / ASPECT; y0 -= (nh - h) / 2; h = nh; }
   const unit = Math.max(w, h) / 160;               // 1 "pixel" in drawing units
   const pts = (p: [number, number][]) => p.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
-  const centre = (p: [number, number][]) => [p.reduce((a, q) => a + q[0], 0) / p.length, p.reduce((a, q) => a + q[1], 0) / p.length];
+  /** Number badge position: top-left inside a big field, just above a small one, so it never covers the red plot-centre dot. */
+  const badgeAt = (p: [number, number][], u: number): [number, number] => {
+    const bx = p.map(q => q[0]); const by = p.map(q => q[1]);
+    const minx = Math.min(...bx), maxx = Math.max(...bx), miny = Math.min(...by);
+    return maxx - minx < u * 26 ? [(minx + maxx) / 2, miny - u * 8] : [minx + u * 9, miny + u * 9];
+  };
   const bar = [25, 50, 100, 200].find(m => m >= w * 0.18) ?? 200;   // scale bar length in metres
 
   return (
@@ -39,10 +46,11 @@ export function FieldMap({ origin, current, candidates, selected, onSelect }: {
       {cur.length > 0 && <polygon points={pts(cur)} fill="none" stroke="#765a22" strokeWidth={unit * 1.5} strokeDasharray={`${unit * 5} ${unit * 3}`} />}
       {rings.map(({ c, pts: p }, i) => {
         const on = selected === c.candidateId;
-        const [cx, cy] = centre(p);
+        const taken = c.alreadyMatched;                    // already confirmed for another plot: shown grey, not selectable
+        const [cx, cy] = badgeAt(p, unit);
         return (
-          <g key={c.candidateId} onClick={() => onSelect(c.candidateId)} style={{ cursor: 'pointer' }}>
-            <polygon points={pts(p)} fill={on ? '#315840' : '#d9b36a'} fillOpacity={on ? 0.8 : 0.55} stroke={on ? '#1d3a28' : '#765a22'} strokeWidth={unit * 2} />
+          <g key={c.candidateId} onClick={() => { if (!taken) onSelect(c.candidateId); }} style={{ cursor: taken ? 'default' : 'pointer' }} opacity={taken ? 0.45 : 1}>
+            <polygon points={pts(p)} fill={taken ? '#b9b9b0' : on ? '#315840' : '#d9b36a'} fillOpacity={on ? 0.8 : 0.55} stroke={taken ? '#8a8a80' : on ? '#1d3a28' : '#765a22'} strokeWidth={unit * 2} />
             <circle cx={cx} cy={cy} r={unit * 6.5} fill="#fff" fillOpacity={0.85} />
             <text x={cx} y={cy} fontSize={unit * 8.5} fontWeight={700} textAnchor="middle" dominantBaseline="central" fill="#1d1d1d" style={{ pointerEvents: 'none' }}>{i + 1}</text>
           </g>

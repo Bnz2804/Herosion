@@ -362,7 +362,7 @@ function Workbench() {
     </section>}
 
     {page === 'advisories' && <section className="rise">
-      <SectionHeading eyebrow="Officer-authored guidance · 03" title="Advisories" description="Write a manual draft grounded in attached source records. Approval is a separate, named officer action." action={<StatusPill tone="warning">No AI draft generation</StatusPill>} />
+      <SectionHeading eyebrow="Drafts and approval · 03" title="Advisories" description="Drafts come from officers or from the agent (submitted by a named officer). Every draft needs approval by a different named officer." action={<StatusPill tone="good">Human approval required</StatusPill>} />
       <div className="mb-5 rounded-xl border border-[#cbbd9c] bg-[#f0e8d3]/75 px-5 py-3.5 text-xs leading-relaxed text-[#655d4b]"><strong>Human approval is mandatory.</strong> Drafts come from an officer or from the agent (submitted by a named officer), are tied to evidence records, and must be approved by a different named officer. Approval updates the record; it does not deliver advice to farmers.</div>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,.95fr)]">
         <section className="rounded-xl border border-card-border bg-card">
